@@ -3,6 +3,7 @@
 
 CPPCHECK := cppcheck
 CPPCHECK_FLAGS := --enable=warning,style,performance,portability --inconclusive --std=c99 --force
+CPPCHECK_FLAGS += --library=tests/cppcheck_syntropic.cfg
 CPPCHECK_FLAGS += --suppress=missingIncludeSystem
 CPPCHECK_FLAGS += --suppress=unusedFunction
 CPPCHECK_FLAGS += --suppress=arrayIndexOutOfBoundsCond
@@ -14,4 +15,4 @@ CPPCHECK_FLAGS += -i tests/unity/
 .PHONY: check
 
 check:
-	$(CPPCHECK) $(CPPCHECK_FLAGS) syntropic/
+	$(CPPCHECK) $(CPPCHECK_FLAGS) src/syntropic/

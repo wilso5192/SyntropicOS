@@ -8,7 +8,7 @@ SIZE      = $(PREFIX)size
 
 # Directories
 PORT_DIR  = port/stm32f4
-SYN_DIR  = syntropic
+SYN_DIR  = src/syntropic
 TEST_DIR  = tests
 
 # CPU flags
@@ -21,7 +21,7 @@ CFLAGS    = $(CPU_FLAGS) \
             -DSYN_USE_LOG=0 \
             -ffunction-sections -fdata-sections \
             -fno-common -fno-builtin \
-            -I. -I$(TEST_DIR)
+            -I. -Isrc -I$(TEST_DIR)
 
 # Linker flags
 LDFLAGS   = $(CPU_FLAGS) \

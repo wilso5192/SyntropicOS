@@ -48,8 +48,8 @@ git submodule update --init
 === "Manual / IDE"
 
     1. Add `lib/SyntropicOS/` to your include paths.
-    2. Add the `.c` files from the `syntropic/` subdirectories you need to your build.
-    3. Optionally add `syntropic/port_stubs/syn_port_stubs.c`.
+    2. Add the `.c` files from the `src/syntropic/` subdirectories you need to your build.
+    3. Optionally add `src/syntropic/port_stubs/syn_port_stubs.c`.
 
 ---
 
@@ -60,7 +60,7 @@ SyntropicOS is configured through a single header file, `syn_config.h`, placed o
 ### Creating Your Config
 
 ```bash
-cp lib/SyntropicOS/syntropic/syn_config_template.h your_project/include/syn_config.h
+cp lib/SyntropicOS/src/syntropic/syn_config_template.h your_project/include/syn_config.h
 ```
 
 ### How It Works

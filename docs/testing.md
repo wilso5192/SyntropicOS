@@ -45,8 +45,8 @@ Renders a 16bpp (RGB565) dashboard mockup to a raw framebuffer file (`tests/fram
 
 ```bash
 gcc -std=c99 -pedantic -Wall -Wextra -Werror -I. -Itests \
-    tests/gen_screenshot.c syntropic/display/syn_canvas.c \
-    syntropic/ui/syn_imgui.c tests/mocks/mock_port.c \
+    tests/gen_screenshot.c src/syntropic/display/syn_canvas.c \
+    src/syntropic/ui/syn_imgui.c tests/mocks/mock_port.c \
     -o gen_screenshot
 ./gen_screenshot
 ```
@@ -59,8 +59,8 @@ Renders a 100-frame interactive GUI timeline (encoder ticks, button presses, tou
 
 ```bash
 gcc -std=c99 -pedantic -Wall -Wextra -Werror -I. -Itests \
-    tests/gen_gif.c syntropic/display/syn_canvas.c \
-    syntropic/ui/syn_imgui.c tests/mocks/mock_port.c \
+    tests/gen_gif.c src/syntropic/display/syn_canvas.c \
+    src/syntropic/ui/syn_imgui.c tests/mocks/mock_port.c \
     -o gen_gif
 ./gen_gif
 ```

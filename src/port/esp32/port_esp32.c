@@ -6,6 +6,8 @@
  * Espressif ESP-IDF drivers and FreeRTOS timing functions.
  */
 
+#if defined(ESP_PLATFORM) && !defined(ARDUINO)
+
 #include "syntropic/common/syn_defs.h"
 #include "syntropic/port/syn_port_system.h"
 #include "syntropic/port/syn_port_gpio.h"
@@ -205,3 +207,5 @@ SYN_Status syn_port_uart_receive_byte(SYN_UARTInstance instance, uint8_t *byte, 
     size_t rec = 0;
     return syn_port_uart_receive(instance, byte, 1, &rec, timeout_ms);
 }
+
+#endif /* ESP_PLATFORM && !ARDUINO */

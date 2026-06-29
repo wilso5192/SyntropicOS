@@ -1,3 +1,4 @@
+
 /**
  * @file test_firmware_multinode.c
  * @brief Test firmware for multi-node Renode simulation.

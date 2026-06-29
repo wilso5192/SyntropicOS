@@ -6,6 +6,8 @@
  * Arduino C++ SDK functions. Compatible with AVR, SAMD, and other Arduino boards.
  */
 
+#if defined(ARDUINO)
+
 #include "syntropic/common/syn_defs.h"
 #include "syntropic/port/syn_port_system.h"
 #include "syntropic/port/syn_port_gpio.h"
@@ -258,3 +260,5 @@ uint16_t syn_port_adc_reference_mv(void)
 {
     return 5000;
 }
+
+#endif /* ARDUINO */

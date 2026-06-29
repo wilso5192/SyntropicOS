@@ -19,6 +19,8 @@
  *   - Sleep (WFI-based)
  */
 
+#if defined(STM32F407xx) && !defined(ARDUINO)
+
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
@@ -1370,3 +1372,4 @@ int _write(int file, char *ptr, int len)
     return len;
 }
 
+#endif /* STM32F407xx && !ARDUINO */

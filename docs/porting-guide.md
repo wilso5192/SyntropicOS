@@ -1,6 +1,6 @@
 # Porting Guide
 
-SyntropicOS separates hardware-specific code into a **port layer** — a set of functions you implement for your specific MCU. Each port function is declared in a header under `syntropic/port/`.
+SyntropicOS separates hardware-specific code into a **port layer** — a set of functions you implement for your specific MCU. Each port function is declared in a header under `src/syntropic/port/`.
 
 ## Port Interfaces
 
@@ -56,7 +56,7 @@ void syn_port_system_reset(void) {
 
 ## Weak Stubs
 
-Compile `syntropic/port_stubs/syn_port_stubs.c` into your project. Every port function has a weak stub that calls `syn_assert_failed()` — if you forget to implement a port function, you'll get a clear runtime assertion instead of silent misbehavior or a cryptic linker error.
+Compile `src/syntropic/port_stubs/syn_port_stubs.c` into your project. Every port function has a weak stub that calls `syn_assert_failed()` — if you forget to implement a port function, you'll get a clear runtime assertion instead of silent misbehavior or a cryptic linker error.
 
 ```cmake
 target_link_libraries(your_target PRIVATE syn_stubs)
@@ -68,10 +68,10 @@ SyntropicOS ships with complete port implementations for several platforms:
 
 | Platform | File | Description |
 |---|---|---|
-| STM32F4 (bare-metal) | `port/stm32f4/port_stm32f4.c` | Direct register access, no HAL dependency |
-| STM32 HAL | `port/stm32_hal/port_stm32_hal.c` | Uses STM32Cube HAL for portability across STM32 families |
-| ESP32 (ESP-IDF) | `port/esp32/port_esp32.c` | ESP-IDF based port |
-| RP2040/RP2350 | `port/rp2040/port_rp2040.c` | Raspberry Pi Pico SDK based port |
-| Arduino | `port/arduino/port_arduino.cpp` | Arduino C++ SDK based port |
+| STM32F4 (bare-metal) | `src/port/stm32f4/port_stm32f4.c` | Direct register access, no HAL dependency |
+| STM32 HAL | `src/port/stm32_hal/port_stm32_hal.c` | Uses STM32Cube HAL for portability across STM32 families |
+| ESP32 (ESP-IDF) | `src/port/esp32/port_esp32.c` | ESP-IDF based port |
+| RP2040/RP2350 | `src/port/rp2040/port_rp2040.c` | Raspberry Pi Pico SDK based port |
+| Arduino | `src/port/arduino/port_arduino.cpp` | Arduino C++ SDK based port |
 
 These can be used directly or as a reference when writing your own port.

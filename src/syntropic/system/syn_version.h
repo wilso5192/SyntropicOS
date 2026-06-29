@@ -8,7 +8,7 @@
  * @par Usage
  * @code
  *   printf("SyntropicOS v%d.%d.%d built %s\n",
- *          SYN_VERSION_MAJOR, SYN_VERSION_MINOR, SYN_VERSION_PATCH,
+ *          SYN_VERSION_YEAR, SYN_VERSION_MONTH, SYN_VERSION_RELEASE,
  *          SYN_BUILD_DATE);
  *
  *   // Or use the struct:
@@ -29,26 +29,26 @@ extern "C" {
 
 /* ── Defaults (override in build system or config) ──────────────────────── */
 
-#ifndef SYN_VERSION_MAJOR
-/** @brief Major version number. */
-#define SYN_VERSION_MAJOR  0
+#ifndef SYN_VERSION_YEAR
+/** @brief Release year (CalVer). */
+#define SYN_VERSION_YEAR   2026
 #endif
 
-#ifndef SYN_VERSION_MINOR
-/** @brief Minor version number. */
-#define SYN_VERSION_MINOR  1
+#ifndef SYN_VERSION_MONTH
+/** @brief Release month (CalVer). */
+#define SYN_VERSION_MONTH  6
 #endif
 
-#ifndef SYN_VERSION_PATCH
-/** @brief Patch version number. */
-#define SYN_VERSION_PATCH  0
+#ifndef SYN_VERSION_RELEASE
+/** @brief Release number within the month (CalVer). */
+#define SYN_VERSION_RELEASE 1
 #endif
 
-/** Packed version: 0xMMmmpp (major.minor.patch). */
+/** Packed version: 0xYYYYMMRR (year.month.release). */
 #define SYN_VERSION_CODE \
-    (((uint32_t)SYN_VERSION_MAJOR << 16) | \
-     ((uint32_t)SYN_VERSION_MINOR <<  8) | \
-      (uint32_t)SYN_VERSION_PATCH)
+    (((uint32_t)SYN_VERSION_YEAR  << 16) | \
+     ((uint32_t)SYN_VERSION_MONTH <<  8) | \
+      (uint32_t)SYN_VERSION_RELEASE)
 
 /** Build date string (e.g., "Jun 27 2026"). */
 #ifndef SYN_BUILD_DATE
@@ -74,9 +74,9 @@ extern "C" {
 
 /** @brief Compile-time version information. */
 typedef struct {
-    uint8_t      major;       /**< Major version number (breaking API changes) */
-    uint8_t      minor;       /**< Minor version number (new backward-compatible features) */
-    uint8_t      patch;       /**< Patch version number (backward-compatible bug fixes) */
+    uint16_t     year;        /**< Release year (CalVer)                 */
+    uint8_t      month;       /**< Release month (CalVer)                */
+    uint8_t      release;     /**< Release number within the month       */
     uint32_t     code;        /**< Packed SYN_VERSION_CODE               */
     const char  *date;        /**< Build date                             */
     const char  *time;        /**< Build time                             */
@@ -91,9 +91,9 @@ typedef struct {
 static inline const SYN_Version *syn_version(void)
 {
     static const SYN_Version v = {
-        .major    = SYN_VERSION_MAJOR,
-        .minor    = SYN_VERSION_MINOR,
-        .patch    = SYN_VERSION_PATCH,
+        .year     = SYN_VERSION_YEAR,
+        .month    = SYN_VERSION_MONTH,
+        .release  = SYN_VERSION_RELEASE,
         .code     = SYN_VERSION_CODE,
         .date     = SYN_BUILD_DATE,
         .time     = SYN_BUILD_TIME,
@@ -104,18 +104,18 @@ static inline const SYN_Version *syn_version(void)
 }
 
 /**
- * @brief Check if running version is at least major.minor.patch.
+ * @brief Check if running version is at least year.month.release.
  *
- * @param maj Required major version component.
- * @param min Required minor version component.
- * @param pat Required patch version component.
+ * @param year Required year component.
+ * @param month Required month component.
+ * @param rel Required release component.
  * @return Non-zero if the current version meets or exceeds the requirements.
  */
-static inline int syn_version_at_least(uint8_t maj, uint8_t min, uint8_t pat)
+static inline int syn_version_at_least(uint16_t year, uint8_t month, uint8_t rel)
 {
-    uint32_t required = ((uint32_t)maj << 16) |
-                        ((uint32_t)min << 8)  |
-                         (uint32_t)pat;
+    uint32_t required = ((uint32_t)year  << 16) |
+                        ((uint32_t)month << 8)  |
+                         (uint32_t)rel;
     return SYN_VERSION_CODE >= required;
 }
 

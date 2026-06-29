@@ -25,7 +25,7 @@ git submodule update --init
 Copy the configuration template and enable the modules you need:
 
 ```bash
-cp lib/SyntropicOS/syntropic/syn_config_template.h include/syn_config.h
+cp lib/SyntropicOS/src/syntropic/syn_config_template.h include/syn_config.h
 ```
 
 Include in your build system:

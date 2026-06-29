@@ -10,20 +10,20 @@ SYN := ../..
 
 CC      := gcc
 CFLAGS  := -std=c99 -Wall -Wextra -Wshadow -Wconversion \
-           -I$(SYN) \
+           -I$(SYN)/src \
            -DSYN_CONFIG_ASSERT_ENABLED=1 \
            -O2 -g
 
 SRCS := main.c \
-        $(SYN)/syntropic/display/syn_canvas.c \
-        $(SYN)/syntropic/ui/syn_imgui.c
+        $(SYN)/src/syntropic/display/syn_canvas.c \
+        $(SYN)/src/syntropic/ui/syn_imgui.c
 
 TARGET := imgui_host
 VT     := visual_test
 
 VT_SRCS := visual_test.c \
-           $(SYN)/syntropic/display/syn_canvas.c \
-           $(SYN)/syntropic/ui/syn_imgui.c
+           $(SYN)/src/syntropic/display/syn_canvas.c \
+           $(SYN)/src/syntropic/ui/syn_imgui.c
 
 $(TARGET): $(SRCS) stb_image_write.h
 	$(CC) $(CFLAGS) $(SRCS) -o $@

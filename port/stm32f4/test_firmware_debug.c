@@ -1,3 +1,4 @@
+
 /**
  * @file test_firmware_debug.c
  * @brief Absolute minimal UART output to debug Renode STM32F4 simulation.

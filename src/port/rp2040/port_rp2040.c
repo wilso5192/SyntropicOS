@@ -6,6 +6,8 @@
  * Raspberry Pi Pico SDK peripheral APIs.
  */
 
+#if defined(PICO_BOARD) && !defined(ARDUINO)
+
 #include "syntropic/common/syn_defs.h"
 #include "syntropic/port/syn_port_system.h"
 #include "syntropic/port/syn_port_gpio.h"
@@ -204,3 +206,5 @@ SYN_Status syn_port_uart_receive_byte(SYN_UARTInstance instance, uint8_t *byte, 
     *byte = (uint8_t)uart_getc(uart);
     return SYN_OK;
 }
+
+#endif /* PICO_BOARD && !ARDUINO */

@@ -26,10 +26,130 @@ Protothreads are stackless cooperative coroutines implemented via the Duff's dev
 | `PT_DELAY_MS(pt, target, ms)` | Non-blocking delay (needs a `uint32_t*` for deadline storage) |
 | `PT_TASK_DELAY_MS(pt, task, ms)` | Convenience form using `task->delay_until` |
 
-!!! warning "Protothread constraints"
-    - You **cannot** use a bare `switch` statement inside a protothread body (use `if`/`else if` chains).
-    - Local variables are **not preserved** across yield/wait points. Use `static` variables or `task->user_data`.
-    - A protothread must reside entirely within a single function.
+### Writing Tasks: Rules and Gotchas
+
+Protothreads use a `switch`/`__LINE__` continuation technique (sometimes
+called Duff's device). This is invisible in normal use, but it creates two
+constraints you must follow.
+
+#### Rule 1: Local variables don't survive across yields or delays
+
+When a task hits `PT_TASK_DELAY_MS()`, `PT_YIELD()`, or any `PT_WAIT_*`
+macro, it **returns** from the function. When the scheduler calls it again,
+execution resumes at the saved line — but local variables on the stack are
+gone.
+
+```c
+// ❌ BAD: 'count' resets every time the task resumes
+static SYN_PT_Status counter_task(SYN_PT *pt, SYN_Task *task)
+{
+    PT_BEGIN(pt);
+    for (;;) {
+        int count = 0;                          // Allocated on the stack
+        count++;
+        PT_TASK_DELAY_MS(pt, task, 1000);       // Task returns here → stack is gone
+        // 'count' is undefined after this point
+    }
+    PT_END(pt);
+}
+```
+
+**Fix:** Use `static` locals, file-scope globals, or `task->user_data`:
+
+```c
+// ✅ Option A: static local
+static SYN_PT_Status counter_task(SYN_PT *pt, SYN_Task *task)
+{
+    PT_BEGIN(pt);
+    static int count = 0;    // Lives in .bss, survives across yields
+    for (;;) {
+        count++;
+        PT_TASK_DELAY_MS(pt, task, 1000);
+    }
+    PT_END(pt);
+}
+
+// ✅ Option B: user_data pointer (best for multiple task instances)
+static SYN_PT_Status counter_task(SYN_PT *pt, SYN_Task *task)
+{
+    int *count = (int *)task->user_data;
+    PT_BEGIN(pt);
+    for (;;) {
+        (*count)++;
+        PT_TASK_DELAY_MS(pt, task, 1000);
+    }
+    PT_END(pt);
+}
+```
+
+!!! note
+    Variables declared **before** `PT_BEGIN` or that are only used **between
+    two consecutive yield points** (i.e. not across a yield) are fine as
+    regular locals.
+
+#### Rule 2: No `switch` statements inside a protothread body
+
+Because `PT_BEGIN`/`PT_END` expand to a `switch`/`case` construct,
+placing your own `switch` inside the protothread body produces nested
+`switch` labels that confuse the compiler.
+
+```c
+// ❌ BAD: compiler error — nested switch conflicts with PT macros
+static SYN_PT_Status my_task(SYN_PT *pt, SYN_Task *task)
+{
+    PT_BEGIN(pt);
+    for (;;) {
+        switch (mode) {           // Conflicts with PT_BEGIN's switch
+            case 0: /* ... */ break;
+            case 1: /* ... */ break;
+        }
+        PT_TASK_DELAY_MS(pt, task, 100);
+    }
+    PT_END(pt);
+}
+```
+
+**Fix:** Extract the `switch` into a helper function, or use `if`/`else if`:
+
+```c
+// ✅ Option A: helper function
+static void handle_mode(int mode) {
+    switch (mode) {
+        case 0: /* ... */ break;
+        case 1: /* ... */ break;
+    }
+}
+
+static SYN_PT_Status my_task(SYN_PT *pt, SYN_Task *task)
+{
+    PT_BEGIN(pt);
+    for (;;) {
+        handle_mode(mode);
+        PT_TASK_DELAY_MS(pt, task, 100);
+    }
+    PT_END(pt);
+}
+
+// ✅ Option B: if/else if chain
+static SYN_PT_Status my_task(SYN_PT *pt, SYN_Task *task)
+{
+    PT_BEGIN(pt);
+    for (;;) {
+        if (mode == 0)      { /* ... */ }
+        else if (mode == 1) { /* ... */ }
+        PT_TASK_DELAY_MS(pt, task, 100);
+    }
+    PT_END(pt);
+}
+```
+
+#### Summary
+
+| Constraint | Workaround |
+|---|---|
+| Local variables lost across yield/delay | Use `static`, globals, or `task->user_data` |
+| No `switch` inside task body | Extract to a helper function, or use `if`/`else if` |
+| Task must be a single function | Use `PT_SPAWN()` for subtask decomposition |
 
 **Return values** (`SYN_PT_Status`):
 

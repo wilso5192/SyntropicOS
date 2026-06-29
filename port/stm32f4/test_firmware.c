@@ -1,3 +1,4 @@
+
 /**
  * @file test_firmware.c
  * @brief On-MCU Unity test firmware for Renode simulation.

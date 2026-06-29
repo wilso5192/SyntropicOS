@@ -20,6 +20,8 @@ A standalone, zero-overhead C99 cooperative operating system and application mic
 
 ## Quick Start
 
+### Git Submodule (CMake, Makefile, IDE)
+
 ```bash
 git submodule add https://github.com/outlookhazy/SyntropicOS lib/SyntropicOS
 ```
@@ -28,6 +30,21 @@ git submodule add https://github.com/outlookhazy/SyntropicOS lib/SyntropicOS
 add_subdirectory(lib/SyntropicOS)
 target_link_libraries(your_target PRIVATE syntropic)
 ```
+
+### Arduino
+
+Clone into your Arduino libraries folder:
+
+```bash
+cd ~/Arduino/libraries
+git clone https://github.com/outlookhazy/SyntropicOS.git
+```
+
+Or download the ZIP from GitHub and install via **Sketch → Include Library → Add .ZIP Library**.
+
+Then open **File → Examples → SyntropicOS** to explore the included examples.
+
+### Minimal Example
 
 ```c
 #include "syntropic/syntropic.h"

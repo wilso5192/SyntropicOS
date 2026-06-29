@@ -1,4 +1,4 @@
-set(SYNTROPIC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../syntropic)
+set(SYNTROPIC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../src/syntropic)
 
 set(SYNTROPIC_SRCS
     ${SYNTROPIC_DIR}/util/syn_ringbuf.c
@@ -32,7 +32,7 @@ idf_component_register(
         "port_esp32.c"
         ${SYNTROPIC_SRCS}
     INCLUDE_DIRS
-        "${CMAKE_CURRENT_SOURCE_DIR}/../../.."
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../../src"
     REQUIRES
         driver esp_wifi esp_event nvs_flash esp_netif esp_http_client
         esp_timer console vfs spi_flash app_update

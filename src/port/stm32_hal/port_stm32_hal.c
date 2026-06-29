@@ -6,6 +6,12 @@
  * STM32Cube HAL peripheral APIs.
  */
 
+#if !defined(ARDUINO) && ( \
+    defined(STM32F1xx) || defined(STM32F4xx) || defined(STM32L4xx) || \
+    defined(STM32G0xx) || defined(STM32H7xx) || defined(STM32F1)   || \
+    defined(STM32F4)   || defined(STM32L4)   || defined(STM32G0)   || \
+    defined(STM32H7) )
+
 #include "syntropic/common/syn_defs.h"
 #include "syntropic/port/syn_port_system.h"
 #include "syntropic/port/syn_port_gpio.h"
@@ -324,3 +330,4 @@ SYN_Status syn_port_uart_receive_byte(SYN_UARTInstance instance, uint8_t *byte, 
     return syn_port_uart_receive(instance, byte, 1, &rec, timeout_ms);
 }
 
+#endif /* STM32 HAL */

@@ -6,9 +6,11 @@ PROJECT_BRIEF          = "Modular cooperative OS & application framework for mic
 PROJECT_NUMBER         = ""
 
 # ── Input ──────────────────────────────────────────────────────────────────
-INPUT                  = syntropic
+INPUT                  = src/syntropic \
+                         src/port
+STRIP_FROM_PATH        = src
 RECURSIVE              = YES
-FILE_PATTERNS          = *.h *.c
+FILE_PATTERNS          = *.h *.c *.cpp
 EXCLUDE_PATTERNS       = */port_stubs/*
 
 # ── Output ─────────────────────────────────────────────────────────────────

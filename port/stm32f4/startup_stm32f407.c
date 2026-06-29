@@ -1,3 +1,4 @@
+
 /**
  * @file startup_stm32f407.c
  * @brief Minimal startup code for STM32F407 (Cortex-M4).

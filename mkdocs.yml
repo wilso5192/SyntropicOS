@@ -39,7 +39,7 @@ plugins:
   - mkdoxy:
       projects:
         syntropic:
-          src-dirs: syntropic/
+          src-dirs: src/syntropic/ src/port/
           full-doc: True
           doxy-cfg:
             FILE_PATTERNS: "*.h *.c"
@@ -70,6 +70,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
+  - Arduino Guide: arduino.md
   - Modules:
     - Core & Utilities: modules/core.md
     - Drivers: modules/drivers.md
