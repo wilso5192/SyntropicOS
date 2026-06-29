@@ -222,13 +222,6 @@ SYN_Status syn_port_gpio_toggle(SYN_GPIO_Pin pin)
 
 /**
  * @brief Handle pointers for UART instances.
- *
- * To integrate with CubeMX-generated code, register the UART handles in
- * this array during system initialization:
- * @code
- *   extern UART_HandleTypeDef huart1;
- *   syn_port_uart_handles[0] = &huart1;
- * @endcode
  */
 UART_HandleTypeDef* syn_port_uart_handles[6] = {NULL};
 
@@ -243,9 +236,6 @@ static UART_HandleTypeDef* get_uart_handle(SYN_UARTInstance instance)
 SYN_Status syn_port_uart_init(SYN_UARTInstance instance, uint32_t baudrate)
 {
     (void)baudrate;
-    // Initialization is typically performed by STM32CubeMX auto-generated code
-    // (e.g. MX_USART1_UART_Init()).
-    // This function verifies that the handle is correctly registered.
     UART_HandleTypeDef* huart = get_uart_handle(instance);
     if (!huart) {
         return SYN_INVALID_PARAM;
@@ -293,24 +283,34 @@ SYN_Status syn_port_uart_receive(SYN_UARTInstance instance,
     UART_HandleTypeDef* huart = get_uart_handle(instance);
     if (!huart) return SYN_INVALID_PARAM;
 
-    // HAL_UART_Receive is blocking. On timeout, we calculate how many bytes
-    // were received by reading RxXferSize - RxXferCount from the handle.
-    HAL_StatusTypeDef status = HAL_UART_Receive(huart, data, (uint16_t)len, timeout_ms == 0 ? HAL_MAX_DELAY : timeout_ms);
+    size_t count = 0;
+    uint32_t start_ms = syn_port_get_tick_ms();
+    uint32_t per_byte_timeout = (timeout_ms > 0) ? 1 : 1;
 
-    size_t count = (size_t)(huart->RxXferSize - huart->RxXferCount);
-    if (received) {
-        *received = count;
+    while (count < len) {
+        /* Clear any overrun error before attempting receive */
+        if (__HAL_UART_GET_FLAG(huart, UART_FLAG_ORE) != RESET) {
+            __HAL_UART_CLEAR_OREFLAG(huart);
+        }
+
+        HAL_StatusTypeDef status = HAL_UART_Receive(huart, &data[count], 1, per_byte_timeout);
+        if (status == HAL_OK) {
+            count++;
+        } else {
+            /* No byte available within per_byte_timeout */
+            if (timeout_ms > 0 && (syn_port_get_tick_ms() - start_ms) >= timeout_ms) {
+                break;
+            }
+            if (count > 0) {
+                /* We got at least one byte; return what we have */
+                break;
+            }
+            break; /* No data, return immediately to let scheduler run */
+        }
     }
 
-    if (status == HAL_OK) {
-        return SYN_OK;
-    } else if (status == HAL_TIMEOUT) {
-        return (count > 0) ? SYN_OK : SYN_TIMEOUT;
-    } else if (status == HAL_BUSY) {
-        return SYN_BUSY;
-    } else {
-        return SYN_ERROR;
-    }
+    if (received) *received = count;
+    return (count > 0) ? SYN_OK : SYN_TIMEOUT;
 }
 
 SYN_Status syn_port_uart_transmit_byte(SYN_UARTInstance instance, uint8_t byte)
@@ -323,3 +323,4 @@ SYN_Status syn_port_uart_receive_byte(SYN_UARTInstance instance, uint8_t *byte, 
     size_t rec = 0;
     return syn_port_uart_receive(instance, byte, 1, &rec, timeout_ms);
 }
+
