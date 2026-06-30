@@ -100,6 +100,19 @@ static void test_onewire_read_rom(void)
     }
 }
 
+/* ── test 8: write_rom writes 8 bytes (exercises lines 151-160) ─────────── */
+
+static void test_onewire_write_rom(void)
+{
+    SYN_SoftOneWire ow;
+    syn_soft_onewire_init(&ow, OW_PIN, OW_DLY);
+    /* ROM address to write */
+    uint8_t rom[8] = {0x28, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x88};
+    /* Should not crash — GPIO transitions happen silently in mock */
+    syn_soft_onewire_write_rom(&ow, rom);
+    TEST_PASS(); /* no crash = pass */
+}
+
 /* ── Registration ────────────────────────────────────────────────────────── */
 
 void run_soft_onewire_tests(void)
@@ -111,4 +124,5 @@ void run_soft_onewire_tests(void)
     RUN_TEST(test_onewire_read_byte_ones);
     RUN_TEST(test_onewire_read_byte_zeros);
     RUN_TEST(test_onewire_read_rom);
+    RUN_TEST(test_onewire_write_rom);
 }

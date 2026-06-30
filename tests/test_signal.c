@@ -75,7 +75,30 @@ static void test_signal(void)
     TEST_ASSERT_EQUAL_INT(-20, syn_signal_mean(&sig));
 }
 
+/** Variance/min/max on a full (wrapped) buffer — exercises lines 127 and 164 */
+static void test_signal_wrapped_stats(void)
+{
+    static int32_t samples2[4];
+    SYN_Signal sig;
+    syn_signal_init(&sig, samples2, 4); /* capacity = 4 */
+
+    /* Push 6 values — wraps the ring buffer (count stays at capacity) */
+    syn_signal_push(&sig, 10);
+    syn_signal_push(&sig, 20);
+    syn_signal_push(&sig, 30);
+    syn_signal_push(&sig, 40);
+    syn_signal_push(&sig, 50); /* wraps: oldest (10) evicted */
+    syn_signal_push(&sig, 60); /* wraps: oldest (20) evicted */
+    /* Buffer now contains [30, 40, 50, 60] (in circular order) */
+    TEST_ASSERT_EQUAL_INT(60, syn_signal_max(&sig));
+    TEST_ASSERT_EQUAL_INT(30, syn_signal_min(&sig));
+    /* variance: mean=45, diffs: -15,-5,5,15 → var = (225+25+25+225)/4 = 125 */
+    int32_t var = syn_signal_variance_q16(&sig);
+    TEST_ASSERT_TRUE(var > 0);
+}
+
 void run_signal_tests(void)
 {
     RUN_TEST(test_signal);
+    RUN_TEST(test_signal_wrapped_stats);
 }

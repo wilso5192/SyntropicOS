@@ -1,6 +1,6 @@
 /**
  * @file test_exti.c
- * @brief Unity tests for syn_exti.
+ * @brief Unity tests for syn_exti — full coverage (adds enable/disable/capacity).
  */
 
 #include "unity/unity.h"
@@ -27,7 +27,6 @@ static void exti_callback_ctx(SYN_GPIO_Pin pin, void *ctx)
 
 static void test_exti(void)
 {
-
     exti_fire_count = 0;
     exti_last_pin = 255;
     exti_ctx_value = 0;
@@ -71,7 +70,56 @@ static void test_exti(void)
     TEST_ASSERT_EQUAL_INT(3, exti_fire_count);
 }
 
+/** syn_exti_enable / syn_exti_disable — exercises port enable/disable calls */
+static void test_exti_enable_disable(void)
+{
+    syn_exti_init();
+    exti_fire_count = 0;
+
+    /* Register a pin first */
+    syn_exti_register(5, SYN_EXTI_RISING, exti_callback, NULL);
+
+    /* Enable — should call syn_port_exti_enable (no-op in mock) */
+    syn_exti_enable(5);
+    /* Verify handler still works after enable */
+    syn_exti_irq_handler(5);
+    TEST_ASSERT_EQUAL_INT(1, exti_fire_count);
+
+    /* Disable */
+    syn_exti_disable(5);
+
+    /* Enable on an unknown pin — should not crash */
+    syn_exti_enable(99);
+
+    /* Disable on an unknown pin — should not crash */
+    syn_exti_disable(99);
+}
+
+/** Capacity limit — filling all slots returns SYN_ERROR on next register */
+static void test_exti_capacity_full(void)
+{
+    syn_exti_init();
+
+    /* Fill up to SYN_EXTI_MAX_PINS (default 16) */
+    int registered = 0;
+    for (int i = 0; i < 16; i++) {
+        SYN_Status st = syn_exti_register((SYN_GPIO_Pin)i,
+                                           SYN_EXTI_RISING,
+                                           exti_callback, NULL);
+        if (st == SYN_OK) registered++;
+    }
+    TEST_ASSERT_EQUAL_INT(16, registered);
+    TEST_ASSERT_EQUAL_INT(16, syn_exti_count());
+
+    /* One more should fail */
+    SYN_Status overflow = syn_exti_register(100, SYN_EXTI_RISING,
+                                              exti_callback, NULL);
+    TEST_ASSERT_EQUAL(SYN_ERROR, overflow);
+}
+
 void run_exti_tests(void)
 {
     RUN_TEST(test_exti);
+    RUN_TEST(test_exti_enable_disable);
+    RUN_TEST(test_exti_capacity_full);
 }

@@ -112,8 +112,68 @@ static void test_suspend_resume(void)
     TEST_ASSERT_EQUAL_INT(3, suspend_counter);
 }
 
+/** syn_sched_run with 0 tasks — exercises line 68: return false */
+static void test_sched_empty(void)
+{
+    mock_tick_ms = 0;
+    SYN_Task tasks[2];
+    SYN_Sched sched;
+    syn_sched_init(&sched, tasks, 0);
+    bool alive = syn_sched_run(&sched);
+    TEST_ASSERT_FALSE(alive);
+}
+
+/** Task with delay_until in future — exercises line 103: continue (still waiting) */
+static void test_sched_delayed_task(void)
+{
+    mock_tick_ms = 0;
+    SYN_Task tasks[2];
+    SYN_Sched sched;
+
+    syn_task_create(&tasks[0], "a", sched_task_a, 0, NULL);
+    syn_sched_init(&sched, tasks, 1);
+
+    /* Set the task delay to 100ms in the future */
+    tasks[0].delay_until = mock_tick_ms + 100;
+
+    /* Run before delay expires — task should not execute */
+    sched_order_idx = 0;
+    syn_sched_run(&sched); /* still waiting — line 103 hit */
+    TEST_ASSERT_EQUAL_INT(0, sched_order_idx);
+
+    /* Advance past delay */
+    mock_tick_advance(150);
+    syn_sched_run(&sched);
+    TEST_ASSERT_EQUAL_INT(1, sched_order_idx);
+}
+
+/** syn_sched_alive_count — exercises line 167 */
+static void test_sched_alive_count(void)
+{
+    mock_tick_ms = 0;
+    SYN_Task tasks[4];
+    SYN_Sched sched;
+
+    syn_task_create(&tasks[0], "a", sched_task_a, 0, NULL);
+    syn_task_create(&tasks[1], "b", sched_task_b, 0, NULL);
+    syn_sched_init(&sched, tasks, 2);
+    TEST_ASSERT_EQUAL_size_t(2, syn_sched_alive_count(&sched));
+
+    /* Run task_a to completion (2 steps + final dead check) */
+    syn_sched_run(&sched);
+    syn_sched_run(&sched);
+    syn_sched_run(&sched);
+
+    /* task_a should be DEAD now, task_b still alive */
+    size_t alive = syn_sched_alive_count(&sched);
+    TEST_ASSERT_TRUE(alive >= 1);
+}
+
 void run_sched_tests(void)
 {
     RUN_TEST(test_scheduler);
     RUN_TEST(test_suspend_resume);
+    RUN_TEST(test_sched_empty);
+    RUN_TEST(test_sched_delayed_task);
+    RUN_TEST(test_sched_alive_count);
 }

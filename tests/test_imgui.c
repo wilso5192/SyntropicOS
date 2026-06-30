@@ -1337,6 +1337,205 @@ static void test_imgui_layout_resolve_tabs(void)
     syn_imgui_end(&ctx);
 }
 
+static void test_imgui_edge_cases_and_uncovered_paths(void)
+{
+    uint8_t fb[128 * 128 / 8];
+    SYN_Canvas canvas;
+    syn_canvas_init(&canvas, fb, 128, 128, 1, NULL, NULL);
+
+    SYN_IMGUI_Context ctx;
+    syn_imgui_init(&ctx);
+
+    /* 1. Basic Navigation & Capping */
+    ctx.focused_id = 2;
+    ctx.last_max_id = 3;
+    syn_imgui_begin(&ctx, &canvas, false, false, -1, false, 0, 0);
+    TEST_ASSERT_EQUAL_INT(1, ctx.focused_id);
+    syn_imgui_end(&ctx);
+
+    ctx.focused_id = 2;
+    ctx.next_id = 0;
+    syn_imgui_end(&ctx);
+    TEST_ASSERT_EQUAL_INT(0, ctx.focused_id);
+
+    /* 2. Group Box & Layouts */
+    syn_imgui_begin(&ctx, &canvas, false, false, 0, false, 0, 0);
+    syn_imgui_group_begin(&ctx, "Title", 10, 10, 100, 40);
+    syn_imgui_button(&ctx, "Btn", 0, 0, 0, 0);
+    syn_imgui_group_end(&ctx);
+
+    syn_imgui_group_begin(&ctx, NULL, 10, 10, 100, 40);
+    syn_imgui_group_end(&ctx);
+
+    syn_imgui_spacing(&ctx, 5);
+    syn_imgui_layout_begin(&ctx, 0, 0, 100);
+    syn_imgui_spacing(&ctx, 10);
+    syn_imgui_layout_end(&ctx);
+
+    syn_imgui_label(&ctx, "BasicLabel", 0, 0);
+
+    syn_imgui_separator(&ctx, 10, 20, 80);
+    syn_imgui_layout_begin(&ctx, 0, 0, 100);
+    syn_imgui_separator(&ctx, 0, 0, 0);
+    syn_imgui_layout_end(&ctx);
+
+    syn_imgui_layout_begin(&ctx, 0, 0, 100);
+    syn_imgui_button(&ctx, "B1", 0, 0, 0, 0);
+    syn_imgui_same_line(&ctx);
+    int16_t widths[] = {40, 40};
+    syn_imgui_layout_row(&ctx, 2, widths, 15);
+    syn_imgui_layout_end(&ctx);
+    syn_imgui_end(&ctx);
+
+    /* 3. Combo Box Touch & Exit */
+    const char *opts[] = { "O1", "O2" };
+    int32_t selected = 0;
+    syn_imgui_begin(&ctx, &canvas, false, false, 0, true, 68, 7);
+    syn_imgui_combo(&ctx, "C1", opts, 2, &selected, 0, 0, 80, 15);
+    syn_imgui_end(&ctx);
+    TEST_ASSERT_EQUAL_INT(1, selected);
+
+    syn_imgui_begin(&ctx, &canvas, false, false, 0, true, 20, 7);
+    syn_imgui_combo(&ctx, "C1", opts, 2, &selected, 0, 0, 80, 15);
+    syn_imgui_end(&ctx);
+    TEST_ASSERT_EQUAL_INT(ctx.focused_id, ctx.active_id);
+
+    syn_imgui_begin(&ctx, &canvas, false, true, 0, false, 0, 0);
+    syn_imgui_combo(&ctx, "C1", opts, 2, &selected, 0, 0, 80, 15);
+    syn_imgui_end(&ctx);
+    TEST_ASSERT_EQUAL_INT(0, ctx.active_id);
+
+    ctx.focused_id = 1;
+    ctx.active_id = 1;
+    syn_imgui_begin(&ctx, &canvas, false, false, -1, false, 0, 0);
+    syn_imgui_combo(&ctx, "C1", opts, 2, &selected, 0, 0, 80, 15);
+    syn_imgui_end(&ctx);
+
+    /* 4. Gauge Arc needle boundary */
+    syn_canvas_clear(&canvas);
+    syn_imgui_gauge(&ctx, "G1", 0, 0, 100, 32, 32, 16);
+
+    /* 5. Modal Dialog Cancel/Input */
+    ctx.focused_id = 99;
+    bool ok_clicked = false;
+    syn_imgui_begin(&ctx, &canvas, false, false, 0, false, 0, 0);
+    syn_imgui_dialog(&ctx, "Msg", &ok_clicked, 10, 10, 60, 30);
+    syn_imgui_end(&ctx);
+    TEST_ASSERT_EQUAL_INT(1, ctx.focused_id);
+
+    syn_imgui_begin(&ctx, &canvas, false, false, 1, false, 0, 0);
+    syn_imgui_dialog(&ctx, "Msg", &ok_clicked, 10, 10, 60, 30);
+    syn_imgui_end(&ctx);
+    TEST_ASSERT_EQUAL_INT(2, ctx.focused_id);
+
+    syn_imgui_begin(&ctx, &canvas, true, false, 0, false, 0, 0);
+    bool dismissed = syn_imgui_dialog(&ctx, "Msg", &ok_clicked, 10, 10, 60, 30);
+    syn_imgui_end(&ctx);
+    TEST_ASSERT_TRUE(dismissed);
+    TEST_ASSERT_FALSE(ok_clicked);
+
+    ctx.focused_id = 1;
+    syn_imgui_begin(&ctx, &canvas, false, false, 0, true, 45, 25);
+    dismissed = syn_imgui_dialog(&ctx, "Msg", &ok_clicked, 10, 10, 60, 30);
+    syn_imgui_end(&ctx);
+    TEST_ASSERT_TRUE(dismissed);
+
+    syn_imgui_begin(&ctx, &canvas, false, false, 0, true, 0, 0);
+    syn_imgui_dialog(&ctx, "Msg", &ok_clicked, 10, 10, 60, 30);
+    syn_imgui_end(&ctx);
+    TEST_ASSERT_FALSE(ctx.touch_down);
+
+    /* 6. Scroll Auto-Follow & Visibility */
+    int16_t scroll_offset = 0;
+    bool toggle_val = false;
+
+    /* Frame 6A: Scroll Down Auto-Follow */
+    scroll_offset = 0;
+    ctx.focused_id = 1;
+    syn_imgui_begin(&ctx, &canvas, false, false, 0, false, 0, 0);
+    syn_imgui_scroll_begin(&ctx, 0, 10, 128, 30, &scroll_offset);
+    syn_imgui_toggle(&ctx, "T1", &toggle_val, 10, 40, 80, 11);
+    syn_imgui_toggle(&ctx, "T2", &toggle_val, 10, 60, 80, 11);
+    syn_imgui_scroll_end(&ctx);
+    syn_imgui_end(&ctx);
+    TEST_ASSERT_EQUAL_INT16(11, scroll_offset);
+
+    /* Frame 6B: Scroll Up Auto-Follow */
+    scroll_offset = 5;
+    ctx.focused_id = 1;
+    syn_imgui_begin(&ctx, &canvas, false, false, 0, false, 0, 0);
+    syn_imgui_scroll_begin(&ctx, 0, 50, 128, 30, &scroll_offset);
+    syn_imgui_toggle(&ctx, "T1", &toggle_val, 10, 65, 80, 11);
+    syn_imgui_toggle(&ctx, "T2", &toggle_val, 10, 95, 80, 11);
+    syn_imgui_scroll_end(&ctx);
+    syn_imgui_end(&ctx);
+    TEST_ASSERT_EQUAL_INT16(20, scroll_offset);
+
+    /* 7. Text Wrapped & Clipped & Marquee */
+    syn_imgui_begin(&ctx, &canvas, false, false, 0, false, 0, 0);
+    syn_imgui_text_wrapped(&ctx, "Line1\nLine2", 0, 0, 60);
+
+    const char *long_tabs[] = { "LongDashboardText" };
+    int32_t active_tab = 0;
+    syn_imgui_tabs(&ctx, long_tabs, 1, &active_tab, 0, 0, 20);
+
+    ctx.focused_id = 1;
+    ctx.active_id = 1;
+    syn_imgui_tabs(&ctx, long_tabs, 1, &active_tab, 0, 0, 20);
+    syn_imgui_end(&ctx);
+
+    int16_t marquee_offset = 0;
+    canvas.clip_w = 0;
+    canvas.clip_h = 0;
+    syn_imgui_text_clipped(&ctx, "Clip", 0, 0, 0, 0, 10, 10);
+    syn_imgui_text_marquee(&ctx, "MarqueeLongTextScroll", &marquee_offset, 0, 0, 10, 1);
+
+    marquee_offset = 0;
+    syn_imgui_text_marquee(&ctx, "MarqueeLongTextScroll", &marquee_offset, 0, 0, 10, 1);
+    marquee_offset = 35;
+    syn_imgui_text_marquee(&ctx, "MarqueeLongTextScroll", &marquee_offset, 0, 0, 10, 1);
+    marquee_offset = 220;
+    syn_imgui_text_marquee(&ctx, "MarqueeLongTextScroll", &marquee_offset, 0, 0, 10, 1);
+    marquee_offset = 250;
+    syn_imgui_text_marquee(&ctx, "MarqueeLongTextScroll", &marquee_offset, 0, 0, 10, 1);
+
+    /* 8. Progress Bar & Selectable & Header Hits */
+    syn_imgui_progress_bar_ex(&ctx, -100, 0, 100, NULL, 0, 0, 100, 12);
+    syn_imgui_progress_bar_ex(&ctx, 5, 0, 100, NULL, 0, 0, 100, 12);
+
+    bool sel_val = false;
+    syn_imgui_begin(&ctx, &canvas, false, false, 0, true, 20, 5);
+    syn_imgui_selectable(&ctx, "Sel", &sel_val, 0, 0, 80, 15);
+    syn_imgui_end(&ctx);
+    TEST_ASSERT_TRUE(sel_val);
+
+    sel_val = false;
+    syn_imgui_begin(&ctx, &canvas, false, false, 0, false, 0, 0);
+    syn_imgui_selectable(&ctx, "Sel", &sel_val, 0, 0, 80, 15);
+    syn_imgui_end(&ctx);
+
+    bool exp_val = false;
+    syn_imgui_begin(&ctx, &canvas, false, false, 0, true, 20, 5);
+    syn_imgui_collapsing_header(&ctx, "Header", &exp_val, 0, 0, 80, 15);
+    syn_imgui_end(&ctx);
+    TEST_ASSERT_TRUE(exp_val);
+
+    int32_t spin_val = 50;
+    syn_imgui_begin(&ctx, &canvas, false, false, 0, true, 20, 5);
+    syn_imgui_spinner(&ctx, "Spin", &spin_val, 0, 100, 1, 0, 0, 80, 15);
+    syn_imgui_end(&ctx);
+
+    const uint8_t icon[8] = {0};
+    syn_imgui_begin(&ctx, &canvas, false, false, 0, true, 5, 5);
+    syn_imgui_icon_button(&ctx, icon, 8, 8, 0, 0, 10, 10);
+    syn_imgui_end(&ctx);
+
+    syn_imgui_begin(&ctx, &canvas, false, false, 0, false, 0, 0);
+    syn_imgui_icon_button(&ctx, icon, 8, 8, 0, 0, 10, 10);
+    syn_imgui_end(&ctx);
+    printf("DEBUG: test_imgui_edge_cases_and_uncovered_paths finished\n");
+}
+
 void run_imgui_tests(void)
 {
     RUN_TEST(test_imgui_navigation);
@@ -1390,5 +1589,6 @@ void run_imgui_tests(void)
     RUN_TEST(test_imgui_layout_resolve_combo);
     RUN_TEST(test_imgui_layout_resolve_page0_stacking);
     RUN_TEST(test_imgui_layout_resolve_tabs);
+    RUN_TEST(test_imgui_edge_cases_and_uncovered_paths);
 }
 

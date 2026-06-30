@@ -68,37 +68,36 @@ static void bit_reverse_sort(q16_t *real, q16_t *imag, uint16_t n, uint16_t stag
 
 /**
  * @brief Compute twiddle factor (cos, -sin) for a butterfly stage.
- * @param k      Butterfly index within group.
- * @param stage  Current FFT stage.
+ * @param k      Butterfly index within group (0 <= k < m/2).
+ * @param stage  Current FFT stage (1-based).
  * @param wr     [out] Twiddle real (cosine).
  * @param wi     [out] Twiddle imaginary (-sine).
+ *
+ * The Cooley-Tukey butterfly calls this with k < 2^(stage-1), so
+ * idx = (256*k) >> stage is always < 128. Only quadrants 0 and 1
+ * of the sine table are reachable.
  */
 static void get_twiddle(uint16_t k, uint16_t stage, q16_t *wr, q16_t *wi)
 {
-    /* Map phase angle to range [0..255] for standard N=256 lookup.
-     * m = 1 << stage, so (256 * k) / m == (256 * k) >> stage. */
     uint16_t idx = (uint16_t)((256u * k) >> stage);
     uint16_t theta = idx & 0x3F;       /* idx % 64 */
     uint16_t quad  = (idx >> 6) & 0x03; /* idx / 64 */
+
+    SYN_ASSERT(quad <= 1); /* k < m/2 guarantees idx < 128 */
 
     q16_t s, c;
     if (quad == 0) {
         s = g_sin_table[theta];
         c = g_sin_table[64 - theta];
-    } else if (quad == 1) {
+    } else {
         s = g_sin_table[64 - theta];
         c = -g_sin_table[theta];
-    } else if (quad == 2) {
-        s = -g_sin_table[theta];
-        c = -g_sin_table[64 - theta];
-    } else {
-        s = -g_sin_table[64 - theta];
-        c = g_sin_table[theta];
     }
 
     *wr = c;
     *wi = -s; /* e^(-i*theta) = cos(theta) - i*sin(theta) */
 }
+
 
 SYN_Status syn_dsp_fft(q16_t *real, q16_t *imag, uint16_t n)
 {

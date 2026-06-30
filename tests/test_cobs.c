@@ -65,7 +65,87 @@ static void test_cobs(void)
     TEST_ASSERT_EQUAL_INT(0, memcmp(cobs_rx_buf, simple, 3));
 }
 
+/** Encode a 254-byte run — exercises lines 40-42 (max run boundary) */
+static void test_cobs_max_run(void)
+{
+    /* 254 non-zero bytes causes a code=0xFF boundary flush */
+    static uint8_t src[254];
+    static uint8_t dst[256];
+    for (int i = 0; i < 254; i++) src[i] = (uint8_t)(i + 1);
+
+    size_t enc = syn_cobs_encode(src, sizeof(src), dst);
+    TEST_ASSERT_TRUE(enc > 0);
+
+    /* Decode back and verify */
+    static uint8_t dec[254];
+    size_t dec_len = syn_cobs_decode(dst, enc, dec);
+    TEST_ASSERT_EQUAL_size_t(254, dec_len);
+    TEST_ASSERT_EQUAL_INT(0, memcmp(src, dec, 254));
+}
+
+/** Decode with 0x00 as a code byte — exercises line 67 (invalid code=0) */
+static void test_cobs_decode_zero_in_payload(void)
+{
+    /* A valid COBS frame starts with a non-zero code byte.
+     * Here: code=1 (zero run of length 0, then write a zero), then code=0x00
+     * which is invalid and should cause decode to return 0. */
+    uint8_t bad[] = { 0x01, 0x00, 0x01 }; /* code=1 writes zero, then code=0 is invalid */
+    uint8_t out[16];
+    size_t n = syn_cobs_decode(bad, sizeof(bad), out);
+    TEST_ASSERT_EQUAL_size_t(0, n); /* returns 0 on invalid code=0 */
+}
+
+/** Decode with run longer than remaining data — exercises line 72 (malformed) */
+static void test_cobs_decode_malformed(void)
+{
+    uint8_t bad[] = { 0x05, 0x01 }; /* code=5 but only 1 byte follows */
+    uint8_t out[16];
+    size_t n = syn_cobs_decode(bad, sizeof(bad), out);
+    TEST_ASSERT_EQUAL_size_t(0, n);
+}
+
+/** Streaming decoder buffer overflow — exercises line 126 (discard frame) */
+static int cobs_overflow_rx = 0;
+static void on_cobs_overflow(const uint8_t *d, size_t l, void *c)
+{ (void)d; (void)l; (void)c; cobs_overflow_rx++; }
+
+static void test_cobs_decoder_overflow(void)
+{
+    static uint8_t dec_buf[4]; /* tiny buffer */
+    cobs_overflow_rx = 0;
+
+    SYN_COBS_Decoder dec;
+    syn_cobs_decoder_init(&dec, dec_buf, sizeof(dec_buf), on_cobs_overflow, NULL);
+
+    /* Feed 10 non-zero bytes — exceeds buffer of 4 */
+    for (int i = 0; i < 10; i++) {
+        syn_cobs_decoder_feed(&dec, (uint8_t)(i + 1));
+    }
+    /* idx should have been reset to 0 (overflow path) */
+    TEST_ASSERT_EQUAL_INT(0, dec.idx);
+}
+
+/** syn_cobs_decoder_reset — exercises lines 131-135 */
+static void test_cobs_decoder_reset(void)
+{
+    static uint8_t dec_buf[64];
+    SYN_COBS_Decoder dec;
+    syn_cobs_decoder_init(&dec, dec_buf, sizeof(dec_buf), NULL, NULL);
+
+    syn_cobs_decoder_feed(&dec, 0x01);
+    syn_cobs_decoder_feed(&dec, 0x02);
+    TEST_ASSERT_EQUAL_INT(2, dec.idx);
+
+    syn_cobs_decoder_reset(&dec);
+    TEST_ASSERT_EQUAL_INT(0, dec.idx);
+}
+
 void run_cobs_tests(void)
 {
     RUN_TEST(test_cobs);
+    RUN_TEST(test_cobs_max_run);
+    RUN_TEST(test_cobs_decode_zero_in_payload);
+    RUN_TEST(test_cobs_decode_malformed);
+    RUN_TEST(test_cobs_decoder_overflow);
+    RUN_TEST(test_cobs_decoder_reset);
 }

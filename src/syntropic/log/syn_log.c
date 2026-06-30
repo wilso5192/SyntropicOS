@@ -182,7 +182,7 @@ void syn_log_hexdump(const char *tag, const void *data, size_t len)
 
     while (offset < len) {
         size_t pos = 0;
-        char num[4];
+        char num[9];
 
         /* Offset: XXXX  */
         syn_fmt_hex(num, sizeof(num), (uint32_t)offset, 4);

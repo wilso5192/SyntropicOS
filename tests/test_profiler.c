@@ -1,6 +1,6 @@
 /**
  * @file test_profiler.c
- * @brief Unity tests for syn_profiler.
+ * @brief Unity tests for syn_profiler — full coverage.
  */
 
 #include "unity/unity.h"
@@ -8,9 +8,31 @@
 #include "syntropic/syntropic.h"
 #include "syntropic/debug/syn_profiler.h"
 
+#include <string.h>
+
+/* ── Print capture ─────────────────────────────────────────────────────── */
+
+static char prof_out[2048];
+static size_t prof_out_pos = 0;
+
+static void prof_print(const char *str)
+{
+    while (str && *str && prof_out_pos < sizeof(prof_out) - 1) {
+        prof_out[prof_out_pos++] = *str++;
+    }
+    prof_out[prof_out_pos] = '\0';
+}
+
+static void prof_out_clear(void)
+{
+    prof_out_pos = 0;
+    prof_out[0] = '\0';
+}
+
+/* ── Test: basic timing and update ────────────────────────────────────── */
+
 static void test_profiler(void)
 {
-
     mock_tick_ms = 0;
 
     SYN_ProfileEntry prof_entries[3];
@@ -57,7 +79,120 @@ static void test_profiler(void)
     TEST_ASSERT_EQUAL_INT(5000, e0->peak_us);
 }
 
+/* ── Test: dump function — normal output ──────────────────────────────── */
+
+static void test_profiler_dump(void)
+{
+    mock_tick_ms = 0;
+
+    SYN_ProfileEntry entries[4];
+    SYN_Profiler prof;
+    syn_profiler_init(&prof, entries, 4);
+
+    /* Register tasks with different name lengths */
+    syn_profiler_register(&prof, 0, "task_a");          /* short name */
+    syn_profiler_register(&prof, 1, "very_long_task_name"); /* >13 chars — triggers truncation */
+    /* Slot 2 and 3 — no name (should be skipped in dump) */
+
+    /* Give task_a some timing */
+    syn_profiler_task_begin(&prof, 0);
+    mock_tick_advance(10);
+    syn_profiler_task_end(&prof, 0);
+
+    syn_profiler_task_begin(&prof, 1);
+    mock_tick_advance(5);
+    syn_profiler_task_end(&prof, 1);
+
+    /* Update with period > 0 */
+    mock_tick_advance(5);
+    syn_profiler_update(&prof);
+
+    prof_out_clear();
+    syn_profiler_dump(&prof, prof_print);
+
+    TEST_ASSERT_NOT_NULL(strstr(prof_out, "Task Profiler"));
+    TEST_ASSERT_NOT_NULL(strstr(prof_out, "task_a"));
+    TEST_ASSERT_NOT_NULL(strstr(prof_out, "very_long_tas")); /* truncated to 13 */
+}
+
+/* ── Test: dump with NULL print function — early return ───────────────── */
+
+static void test_profiler_dump_null_print(void)
+{
+    SYN_ProfileEntry entries[2];
+    SYN_Profiler prof;
+    syn_profiler_init(&prof, entries, 2);
+    syn_profiler_register(&prof, 0, "t");
+
+    /* Should not crash */
+    syn_profiler_dump(&prof, NULL);
+}
+
+/* ── Test: index out of bounds — begin/end guard ─────────────────────── */
+
+static void test_profiler_oob_guards(void)
+{
+    SYN_ProfileEntry entries[2];
+    SYN_Profiler prof;
+    syn_profiler_init(&prof, entries, 2);
+
+    /* Indexes >= capacity should be silently ignored */
+    syn_profiler_task_begin(&prof, 5); /* OOB */
+    mock_tick_advance(1);
+    syn_profiler_task_end(&prof, 5);   /* OOB */
+    /* No crash = pass */
+}
+
+/* ── Test: update with period == 0 (covers the divide-by-zero guard) ─── */
+
+static void test_profiler_update_period_zero(void)
+{
+    mock_tick_ms = 0;
+    SYN_ProfileEntry entries[2];
+    SYN_Profiler prof;
+    syn_profiler_init(&prof, entries, 2);
+    syn_profiler_register(&prof, 0, "t");
+
+    syn_profiler_task_begin(&prof, 0);
+    /* Don't advance tick — period = 0 */
+    syn_profiler_task_end(&prof, 0);
+    syn_profiler_update(&prof); /* period==0 → uses 1 to avoid div by zero */
+    /* No crash = pass */
+}
+
+/* ── Test: dump covers the peak_us padding branches ──────────────────── */
+
+static void test_profiler_dump_peak_padding(void)
+{
+    mock_tick_ms = 1000;
+
+    SYN_ProfileEntry entries[1];
+    SYN_Profiler prof;
+    syn_profiler_init(&prof, entries, 1);
+    syn_profiler_register(&prof, 0, "t");
+
+    /* Set up a large peak to exercise different padding branches */
+    syn_profiler_task_begin(&prof, 0);
+    mock_tick_advance(50);
+    syn_profiler_task_end(&prof, 0);
+
+    mock_tick_advance(50);
+    syn_profiler_update(&prof);
+
+    prof_out_clear();
+    syn_profiler_dump(&prof, prof_print);
+    TEST_ASSERT_NOT_NULL(strstr(prof_out, "Task Profiler"));
+    TEST_ASSERT_NOT_NULL(strstr(prof_out, "t"));
+}
+
+/* ── Test runner ─────────────────────────────────────────────────────── */
+
 void run_profiler_tests(void)
 {
     RUN_TEST(test_profiler);
+    RUN_TEST(test_profiler_dump);
+    RUN_TEST(test_profiler_dump_null_print);
+    RUN_TEST(test_profiler_oob_guards);
+    RUN_TEST(test_profiler_update_period_zero);
+    RUN_TEST(test_profiler_dump_peak_padding);
 }

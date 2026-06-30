@@ -71,7 +71,7 @@ static int read_remaining_len(SYN_Socket sock, uint32_t *len_out, uint32_t timeo
     do {
         if (read_all(sock, &encodedByte, 1, timeout_ms) != 1) return -1;
         value += (encodedByte & 127) * multiplier;
-        if (multiplier > 128*128*128) return -1;
+        if (multiplier > 128UL * 128UL * 128UL) return -1;
         multiplier *= 128;
     } while ((encodedByte & 128) != 0);
     *len_out = value;

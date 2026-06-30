@@ -188,6 +188,42 @@ void test_json_bool_array(void)
     TEST_ASSERT_EQUAL_STRING("[true,false]", syn_json_str(&w));
 }
 
+/** Extra escape chars: \\ \r \t — exercises lines 65, 67, 68 */
+static void test_json_extra_escapes(void)
+{
+    reset();
+    syn_json_obj_open(&w);
+    syn_json_key_str(&w, "s", "a\\b\rc\td"); /* backslash, CR, TAB */
+    syn_json_obj_close(&w);
+    const char *out = syn_json_str(&w);
+    TEST_ASSERT_NOT_NULL(strstr(out, "\\\\"));  /* escaped backslash */
+    TEST_ASSERT_NOT_NULL(strstr(out, "\\r"));   /* escaped CR */
+    TEST_ASSERT_NOT_NULL(strstr(out, "\\t"));   /* escaped TAB */
+}
+
+/** jw_puts overflow mid-string — exercises lines 45-46 */
+static void test_json_write_puts_overflow(void)
+{
+    char buf2[12]; /* very small */
+    SYN_JsonWriter w2;
+    syn_json_init(&w2, buf2, sizeof(buf2));
+    syn_json_obj_open(&w2);
+    /* Key + escape sequence will exceed small buffer */
+    syn_json_key_str(&w2, "k", "\\escaped_and_long");
+    TEST_ASSERT_FALSE(syn_json_ok(&w2));
+}
+
+/** syn_json_val_uint — exercises lines 290-295 */
+static void test_json_val_uint(void)
+{
+    reset();
+    syn_json_obj_open(&w);
+    syn_json_key(&w, "n");
+    syn_json_val_uint(&w, 42u);
+    syn_json_obj_close(&w);
+    TEST_ASSERT_NOT_NULL(strstr(syn_json_str(&w), "42"));
+}
+
 /* ── Test group ────────────────────────────────────────────────────────── */
 
 void run_json_write_tests(void)
@@ -208,5 +244,7 @@ void run_json_write_tests(void)
     RUN_TEST(test_json_zero);
     RUN_TEST(test_json_int_min);
     RUN_TEST(test_json_bool_array);
+    RUN_TEST(test_json_extra_escapes);
+    RUN_TEST(test_json_write_puts_overflow);
+    RUN_TEST(test_json_val_uint);
 }
-

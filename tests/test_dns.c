@@ -124,9 +124,121 @@ void test_mdns_responder(void)
     TEST_ASSERT_EQUAL_UINT8(1,   addr_ptr[2]);
     TEST_ASSERT_EQUAL_UINT8(100, addr_ptr[3]);
 }
+/** DNS resolve with custom server — exercises line 142 */
+static void test_dns_resolve_custom_server(void)
+{
+    mock_port_reset();
+
+    /* Response matching ID 0 */
+    uint8_t response[] = {
+        0x00, 0x00, 0x81, 0x80, 0x00, 0x01, 0x00, 0x01,
+        0x00, 0x00, 0x00, 0x00,
+        3, 'f', 'o', 'o', 3, 'c', 'o', 'm', 0,
+        0x00, 0x01, 0x00, 0x01,
+        0xC0, 0x0C, 0x00, 0x01, 0x00, 0x01,
+        0x00, 0x00, 0x00, 0x3C, 0x00, 0x04,
+        10, 20, 30, 40
+    };
+    SYN_SockAddr from = {{ 1, 1, 1, 1 }, 53};
+    mock_udp_set_response(response, sizeof(response), &from);
+
+    SYN_SockAddr custom = {{ 1, 1, 1, 1 }, 53};
+    SYN_SockAddr resolved;
+    SYN_DnsResolver r;
+    r.dns_server = &custom;
+    r.hostname = "foo.com";
+    r.addr_out = &resolved;
+    r.timeout_ms = 1000;
+
+    SYN_PT pt;
+    PT_INIT(&pt);
+    SYN_Task task;
+    task.user_data = &r;
+    while (syn_dns_resolve_task(&pt, &task) == PT_WAITING) {
+        syn_port_delay_ms(1);
+    }
+    TEST_ASSERT_EQUAL(SYN_OK, r.status);
+    TEST_ASSERT_EQUAL_UINT8(10, resolved.ip[0]);
+}
+
+/** DNS resolve: UDP open fail — exercises lines 153-154 */
+static void test_dns_resolve_udp_open_fail(void)
+{
+    mock_port_reset();
+    mock_udp_open_ok = false;
+
+    SYN_SockAddr resolved;
+    SYN_DnsResolver r;
+    r.dns_server = NULL;
+    r.hostname = "test.com";
+    r.addr_out = &resolved;
+    r.timeout_ms = 1000;
+
+    SYN_PT pt;
+    PT_INIT(&pt);
+    SYN_Task task;
+    task.user_data = &r;
+    while (syn_dns_resolve_task(&pt, &task) == PT_WAITING) {
+        syn_port_delay_ms(1);
+    }
+    TEST_ASSERT_EQUAL(SYN_ERROR, r.status);
+    mock_udp_open_ok = true;
+}
+
+/** DNS resolve: send fails — exercises lines 174-177 */
+static void test_dns_resolve_send_fail(void)
+{
+    mock_port_reset();
+    mock_udp_sendto_fail = true;
+
+    SYN_SockAddr resolved;
+    SYN_DnsResolver r;
+    r.dns_server = NULL;
+    r.hostname = "test.com";
+    r.addr_out = &resolved;
+    r.timeout_ms = 1000;
+
+    SYN_PT pt;
+    PT_INIT(&pt);
+    SYN_Task task;
+    task.user_data = &r;
+    while (syn_dns_resolve_task(&pt, &task) == PT_WAITING) {
+        syn_port_delay_ms(1);
+    }
+    TEST_ASSERT_EQUAL(SYN_ERROR, r.status);
+    mock_udp_sendto_fail = false;
+}
+
+/** DNS resolve: timeout — exercises lines 192-194 */
+static void test_dns_resolve_timeout(void)
+{
+    mock_port_reset();
+    /* No UDP response loaded → recv returns -1 every time → timeout */
+
+    SYN_SockAddr resolved;
+    SYN_DnsResolver r;
+    r.dns_server = NULL;
+    r.hostname = "timeout.com";
+    r.addr_out = &resolved;
+    r.timeout_ms = 10; /* Very short timeout */
+
+    SYN_PT pt;
+    PT_INIT(&pt);
+    SYN_Task task;
+    task.user_data = &r;
+    for (int i = 0; i < 200; i++) {
+        if (syn_dns_resolve_task(&pt, &task) != PT_WAITING) break;
+        mock_tick_ms += 1; /* advance time */
+    }
+    TEST_ASSERT_EQUAL(SYN_TIMEOUT, r.status);
+}
 
 void run_dns_tests(void)
 {
     RUN_TEST(test_dns_resolve);
     RUN_TEST(test_mdns_responder);
+    RUN_TEST(test_dns_resolve_custom_server);
+    RUN_TEST(test_dns_resolve_udp_open_fail);
+    RUN_TEST(test_dns_resolve_send_fail);
+    RUN_TEST(test_dns_resolve_timeout);
 }

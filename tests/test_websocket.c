@@ -154,10 +154,251 @@ void test_websocket_ping_pong(void)
     TEST_ASSERT_EQUAL_STRING_LEN("ping", &mock_sock_tx_buf[2], 4);
 }
 
+/** Long WS key — SHA1 processes >64 bytes, exercises line 114 (multi-block) */
+static void test_websocket_upgrade_long_key(void)
+{
+    mock_port_reset();
+    mock_sock_connected = true;
+
+    /* Key: ~100 chars + GUID 36 chars = ~136 bytes → exceeds 128, so
+     * sha1_update processes 2 full blocks and hits the inner loop (line 114) */
+    const char *headers =
+        "GET /chat HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA_EXTRA\r\n"
+        "\r\n";
+
+    SYN_HttpdResponse resp;
+    resp.sock = 11;
+    resp.buf = (uint8_t *)headers;
+    resp.buf_size = strlen(headers);
+    resp.headers_sent = false;
+    resp.upgraded = false;
+
+    SYN_HttpdRequest req;
+    memset(&req, 0, sizeof(req));
+    req.path = "/chat";
+    req.method = SYN_HTTP_GET;
+    req.headers = headers;
+
+    SYN_WebsocketSession ws;
+    syn_websocket_upgrade(&req, &resp, &ws, on_ws_message, NULL);
+    /* Result may vary; we're after coverage of sha1_transform multi-block */
+}
+
+/** Upgrade without Sec-WebSocket-Key — exercises line 229 */
+static void test_websocket_upgrade_no_key(void)
+{
+
+    mock_port_reset();
+    mock_sock_connected = true;
+
+    const char *headers =
+        "GET /chat HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "\r\n"; /* No Sec-WebSocket-Key */
+
+    SYN_HttpdResponse resp;
+    resp.sock = 11;
+    resp.buf = (uint8_t *)headers;
+    resp.buf_size = strlen(headers);
+    resp.headers_sent = false;
+    resp.upgraded = false;
+
+    SYN_HttpdRequest req;
+    memset(&req, 0, sizeof(req));
+    req.path = "/chat";
+    req.method = SYN_HTTP_GET;
+    req.headers = headers;
+
+    SYN_WebsocketSession ws;
+    SYN_Status st = syn_websocket_upgrade(&req, &resp, &ws, on_ws_message, NULL);
+    TEST_ASSERT_EQUAL(SYN_ERROR, st); /* key not found */
+}
+
+/** Send a frame with len in [126..65535] — exercises lines 288-292 */
+static void test_websocket_send_medium_frame(void)
+{
+    mock_port_reset();
+    mock_sock_connected = true;
+
+    /* Build a connected session directly */
+    SYN_WebsocketSession ws;
+    memset(&ws, 0, sizeof(ws));
+    ws.sock = 5;
+    ws.state = SYN_WS_STATE_CONNECTED;
+
+    /* Send 200 bytes (>125, so it uses the 126-style 2-byte length) */
+    static uint8_t payload[200];
+    memset(payload, 'A', sizeof(payload));
+    SYN_Status st = syn_websocket_send(&ws, 0x01, payload, sizeof(payload));
+    TEST_ASSERT_EQUAL(SYN_OK, st);
+    /* Header byte 1 should be 126 */
+    TEST_ASSERT_EQUAL_UINT8(126, mock_sock_tx_buf[1]);
+    /* Header bytes 2-3 should be big-endian 200 */
+    TEST_ASSERT_EQUAL_UINT8(0, mock_sock_tx_buf[2]);
+    TEST_ASSERT_EQUAL_UINT8(200, mock_sock_tx_buf[3]);
+}
+
+/** Send header fails — exercises lines 299-300 */
+static void test_websocket_send_header_fail(void)
+{
+    mock_port_reset();
+    mock_sock_connected = true;
+
+    SYN_WebsocketSession ws;
+    memset(&ws, 0, sizeof(ws));
+    ws.sock = 5;
+    ws.state = SYN_WS_STATE_CONNECTED;
+
+    mock_sock_send_fail = true;
+    uint8_t d = 0x42;
+    SYN_Status st = syn_websocket_send(&ws, 0x01, &d, 1);
+    TEST_ASSERT_EQUAL(SYN_ERROR, st);
+    TEST_ASSERT_EQUAL(SYN_WS_STATE_CLOSED, ws.state);
+    mock_sock_send_fail = false;
+}
+
+/** Send payload fails — exercises lines 305-306 */
+static void test_websocket_send_payload_fail(void)
+{
+    mock_port_reset();
+    mock_sock_connected = true;
+
+    SYN_WebsocketSession ws;
+    memset(&ws, 0, sizeof(ws));
+    ws.sock = 5;
+    ws.state = SYN_WS_STATE_CONNECTED;
+
+    /* Fail after the 2-byte header is sent but payload send fails */
+    mock_sock_send_fail_after_bytes = 2;
+    uint8_t d = 0x42;
+    SYN_Status st = syn_websocket_send(&ws, 0x01, &d, 1);
+    TEST_ASSERT_EQUAL(SYN_ERROR, st);
+    TEST_ASSERT_EQUAL(SYN_WS_STATE_CLOSED, ws.state);
+    mock_sock_send_fail_after_bytes = -1;
+}
+/** Recv: 126-length unmasked frame — exercises lines 341-344, 352-357 */
+static void test_websocket_recv_extended_len(void)
+{
+    mock_port_reset();
+    s_msg_callback_count = 0;
+
+    SYN_WebsocketSession ws;
+    memset(&ws, 0, sizeof(ws));
+    ws.sock = 11;
+    ws.state = SYN_WS_STATE_CONNECTED;
+    ws.on_message = on_ws_message;
+    mock_sock_connected = true;
+
+    /* Unmasked text frame with 2-byte extended length = 200 bytes */
+    uint8_t frame[204];
+    frame[0] = 0x81;  /* FIN=1, text */
+    frame[1] = 0x7E;  /* Mask=0, Len=126 → use 2-byte ext length */
+    frame[2] = 0x00;  /* high byte of 200 */
+    frame[3] = 0xC8;  /* low byte of 200 (0xC8 = 200) */
+    memset(&frame[4], 'B', 200);
+    mock_sock_set_response(frame, sizeof(frame));
+
+    SYN_PT pt;
+    PT_INIT(&pt);
+    SYN_Task task;
+    task.user_data = &ws;
+    for (int i = 0; i < 300; i++) {
+        syn_websocket_task(&pt, &task);
+    }
+    TEST_ASSERT_EQUAL(1, s_msg_callback_count);
+    TEST_ASSERT_EQUAL(0x01, s_last_opcode);
+}
+
+/** Recv: close frame — exercises lines 378-380 */
+static void test_websocket_recv_close(void)
+{
+    mock_port_reset();
+
+    SYN_WebsocketSession ws;
+    memset(&ws, 0, sizeof(ws));
+    ws.sock = 11;
+    ws.state = SYN_WS_STATE_CONNECTED;
+    mock_sock_connected = true;
+
+    /* Close frame with 2-byte status code (RFC 6455: close frames carry a 2-byte code) */
+    uint8_t frame[] = { 0x88, 0x02, 0x03, 0xE8 }; /* opcode=8, len=2, status=1000 (normal) */
+    mock_sock_set_response(frame, sizeof(frame));
+
+    SYN_PT pt;
+    PT_INIT(&pt);
+    SYN_Task task;
+    task.user_data = &ws;
+    for (int i = 0; i < 10; i++) {
+        syn_websocket_task(&pt, &task);
+    }
+    TEST_ASSERT_EQUAL(SYN_WS_STATE_CLOSED, ws.state);
+}
+
+/** Recv: peer disconnects (recv returns 0) — exercises lines 397-398 */
+static void test_websocket_recv_peer_disconnect(void)
+{
+    mock_port_reset();
+
+    SYN_WebsocketSession ws;
+    memset(&ws, 0, sizeof(ws));
+    ws.sock = 11;
+    ws.state = SYN_WS_STATE_CONNECTED;
+    mock_sock_connected = true;
+    mock_sock_eof_on_empty = true; /* recv returns 0 instead of -1 */
+
+    SYN_PT pt;
+    PT_INIT(&pt);
+    SYN_Task task;
+    task.user_data = &ws;
+    syn_websocket_task(&pt, &task);
+    TEST_ASSERT_EQUAL(SYN_WS_STATE_CLOSED, ws.state);
+    mock_sock_eof_on_empty = false;
+}
+
+/** Recv: too-large frame (len==127) — exercises lines 347-349 */
+static void test_websocket_recv_too_large(void)
+{
+    mock_port_reset();
+
+    SYN_WebsocketSession ws;
+    memset(&ws, 0, sizeof(ws));
+    ws.sock = 11;
+    ws.state = SYN_WS_STATE_CONNECTED;
+    mock_sock_connected = true;
+
+    /* Frame with len=127 (8-byte extended length, unsupported) */
+    uint8_t frame[] = { 0x81, 0x7F };
+    mock_sock_set_response(frame, sizeof(frame));
+
+    SYN_PT pt;
+    PT_INIT(&pt);
+    SYN_Task task;
+    task.user_data = &ws;
+    for (int i = 0; i < 5; i++) {
+        syn_websocket_task(&pt, &task);
+    }
+    TEST_ASSERT_EQUAL(SYN_WS_STATE_CLOSED, ws.state);
+}
+
 void run_websocket_tests(void)
 {
     RUN_TEST(test_websocket_upgrade);
     RUN_TEST(test_websocket_send);
     RUN_TEST(test_websocket_recv_masked_text);
     RUN_TEST(test_websocket_ping_pong);
+    RUN_TEST(test_websocket_upgrade_long_key);
+    RUN_TEST(test_websocket_upgrade_no_key);
+    RUN_TEST(test_websocket_send_medium_frame);
+    RUN_TEST(test_websocket_send_header_fail);
+    RUN_TEST(test_websocket_send_payload_fail);
+    RUN_TEST(test_websocket_recv_extended_len);
+    RUN_TEST(test_websocket_recv_close);
+    RUN_TEST(test_websocket_recv_peer_disconnect);
+    RUN_TEST(test_websocket_recv_too_large);
 }

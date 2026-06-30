@@ -80,7 +80,19 @@ static void test_param_store(void)
     (void)wc; /* just verify it doesn't crash */
 }
 
+/** data_size exceeds sector capacity — exercises line 132 (slots_per_sector == 0) */
+static void test_param_data_too_large(void)
+{
+    mock_port_reset();
+    SYN_ParamStore store;
+    /* MOCK_FLASH_SECTOR=1024; set data_size >> sector so slot doesn't fit */
+    SYN_Status st = syn_param_init(&store, 0, 1, 1024u);
+    /* Should return SYN_ERROR (data too large for sector) */
+    TEST_ASSERT_EQUAL(SYN_ERROR, st);
+}
+
 void run_param_tests(void)
 {
     RUN_TEST(test_param_store);
+    RUN_TEST(test_param_data_too_large);
 }

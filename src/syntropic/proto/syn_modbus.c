@@ -83,6 +83,9 @@ static void append_crc(uint8_t *buf, uint16_t len)
  */
 static void send_response(SYN_Modbus *mb, uint16_t len)
 {
+    if (mb->buf[0] == 0) {
+        return; /* Do not respond to broadcast */
+    }
     append_crc(mb->buf, len);
     syn_port_uart_transmit(mb->cfg.uart, mb->buf, len + 2, 100);
     mb->frames_tx++;
@@ -96,6 +99,10 @@ static void send_response(SYN_Modbus *mb, uint16_t len)
  */
 static void send_exception(SYN_Modbus *mb, uint8_t func, uint8_t ex_code)
 {
+    if (mb->buf[0] == 0) {
+        mb->errors++;
+        return; /* Do not respond to broadcast exceptions */
+    }
     mb->buf[0] = mb->cfg.slave_addr;
     mb->buf[1] = (uint8_t)(func | 0x80);
     mb->buf[2] = ex_code;
@@ -201,10 +208,6 @@ static void handle_write_multiple(SYN_Modbus *mb)
     }
 
     /* Response: addr, func, start addr, quantity */
-    mb->buf[0] = mb->cfg.slave_addr;
-    mb->buf[1] = SYN_MB_FC_WRITE_MULTIPLE;
-    write_u16(&mb->buf[2], addr);
-    write_u16(&mb->buf[4], count);
     send_response(mb, 6);
 }
 

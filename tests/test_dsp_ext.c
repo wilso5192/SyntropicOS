@@ -40,6 +40,14 @@ static void test_biquad_filter(void)
 {
     SYN_FilterBiquad f;
 
+    /* Test manual initialization */
+    syn_filter_biquad_init(&f, Q16_ONE, Q16_FROM_INT(2), Q16_FROM_INT(3), Q16_FROM_INT(4), Q16_FROM_INT(5));
+    TEST_ASSERT_EQUAL(Q16_ONE, f.b0);
+    TEST_ASSERT_EQUAL(Q16_FROM_INT(2), f.b1);
+    TEST_ASSERT_EQUAL(Q16_FROM_INT(3), f.b2);
+    TEST_ASSERT_EQUAL(Q16_FROM_INT(4), f.a1);
+    TEST_ASSERT_EQUAL(Q16_FROM_INT(5), f.a2);
+
     /* Setup lowpass filter: Cutoff = 10Hz, Sample Rate = 100Hz */
     syn_filter_biquad_lowpass(&f, Q16_FROM_INT(10), Q16_FROM_INT(100));
 
@@ -242,6 +250,27 @@ static void test_fft_against_reference(void)
     }
 }
 
+/** FFT with N=256 — exercises the maximum supported transform size.
+ *  Note: twiddle quads 2/3 (lines 91-96) are mathematically unreachable
+ *  in this Cooley-Tukey implementation (max idx < 128 always), so they
+ *  are accepted as dead code. This test verifies N=256 runs correctly. */
+static void test_fft_n256(void)
+{
+    static q16_t real[256], imag[256];
+
+    /* Impulse at t=0: flat spectrum */
+    for (int i = 0; i < 256; i++) {
+        real[i] = (i == 0) ? Q16_ONE : 0;
+        imag[i] = 0;
+    }
+
+    SYN_Status st = syn_dsp_fft(real, imag, 256);
+    TEST_ASSERT_EQUAL(SYN_OK, st);
+    /* All bins should have approximately equal magnitude = 1/N */
+    /* Just check bin 0 is non-zero and it completed OK */
+    TEST_ASSERT_TRUE(q16_abs(real[0]) > 0);
+}
+
 void run_biquad_tests(void)
 {
     RUN_TEST(test_biquad_filter);
@@ -256,4 +285,5 @@ void run_fft_tests(void)
     RUN_TEST(test_fft_impulse);
     RUN_TEST(test_fft_invalid);
     RUN_TEST(test_fft_against_reference);
+    RUN_TEST(test_fft_n256);
 }

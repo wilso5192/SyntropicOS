@@ -1,6 +1,6 @@
 /**
  * @file test_router.c
- * @brief Unity tests for syn_router.
+ * @brief Unity tests for syn_router — full coverage.
  */
 
 #include "unity/unity.h"
@@ -18,6 +18,8 @@ static void rt_handler(const SYN_Packet *p, void *c)
     rt_msg_n++;
     rt_last_type = p->type;
 }
+
+/* ── Test: basic send, receive, ACK ─────────────────────────────────────── */
 
 static void test_router(void)
 {
@@ -83,7 +85,196 @@ static void test_router(void)
     TEST_ASSERT_FALSE(pend[0].active);
 }
 
+/* ── Test: receiving packet with ACK_REQ → send_ack executed ──────────── */
+
+static void test_router_send_ack_on_ackreq(void)
+{
+    mock_transport_reset();
+    mock_tick_ms = 0;
+
+    SYN_Transport tr = { .send = rt_send, .recv = rt_recv, .ctx = NULL };
+    SYN_RouterHandler rh[4];
+    SYN_Router rtr;
+    syn_router_init(&rtr, 0x01, &tr, rh, 4);
+    syn_router_register(&rtr, 0x10, rt_handler, NULL);
+
+    /* Send a packet to us with ACK_REQ flag set */
+    rt_rx_buf[0] = 0x02;                  /* src = node 2 */
+    rt_rx_buf[1] = 0x01;                  /* dst = us */
+    rt_rx_buf[2] = 0x10;                  /* type */
+    rt_rx_buf[3] = 0x42;                  /* seq = 0x42 */
+    rt_rx_buf[4] = SYN_PKT_FLAG_ACK_REQ; /* flags */
+    rt_rx_buf[5] = 0;                     /* len */
+    rt_rx_len = 6; rt_rx_rdy = true;
+
+    rt_tx_len = 0;
+    rt_msg_n = 0;
+    syn_router_poll(&rtr);
+
+    /* Handler should have been called */
+    TEST_ASSERT_EQUAL_INT(1, rt_msg_n);
+
+    /* An ACK should have been sent back */
+    TEST_ASSERT_TRUE(rt_tx_len >= (size_t)SYN_ROUTER_HEADER_SIZE);
+    /* ACK packet: src=us(0x01), dst=sender(0x02), type=SYN_MSG_ACK, seq=0x42 */
+    TEST_ASSERT_EQUAL_HEX8(0x01, rt_tx_buf[0]); /* our src */
+    TEST_ASSERT_EQUAL_HEX8(0x02, rt_tx_buf[1]); /* back to sender */
+    TEST_ASSERT_EQUAL_HEX8(0x42, rt_tx_buf[3]); /* echoed seq */
+    TEST_ASSERT_TRUE((rt_tx_buf[4] & SYN_PKT_FLAG_IS_ACK) != 0);
+}
+
+/* ── Test: pending table full — queue_pending returns false ──────────────── */
+
+static void test_router_pending_table_full(void)
+{
+    mock_transport_reset();
+    mock_tick_ms = 0;
+
+    SYN_Transport tr = { .send = rt_send, .recv = rt_recv, .ctx = NULL };
+    SYN_RouterHandler rh[4];
+    SYN_Router rtr;
+    syn_router_init(&rtr, 0x01, &tr, rh, 4);
+
+    /* Enable ACK with only 2 pending slots */
+    SYN_PendingAck pend[2];
+    syn_router_enable_ack(&rtr, pend, 2, 500, 3);
+    syn_router_register(&rtr, 0x10, rt_handler, NULL);
+
+    uint8_t pl[] = {0x01};
+
+    /* Send twice — fills both slots */
+    TEST_ASSERT_TRUE(syn_router_send(&rtr, 0x02, 0x10, pl, 1, true));
+    TEST_ASSERT_TRUE(syn_router_send(&rtr, 0x02, 0x10, pl, 1, true));
+
+    /* Third send — queue_pending will fail (table full) but send itself
+     * still succeeds; reliable flag just can't be tracked */
+    TEST_ASSERT_TRUE(syn_router_send(&rtr, 0x02, 0x10, pl, 1, true));
+    /* Both pending slots should still be active */
+    TEST_ASSERT_TRUE(pend[0].active);
+    TEST_ASSERT_TRUE(pend[1].active);
+}
+
+/* ── Test: retry mechanism — check_retries retransmits ──────────────────── */
+
+static void test_router_check_retries_retransmit(void)
+{
+    mock_transport_reset();
+    mock_tick_ms = 0;
+
+    SYN_Transport tr = { .send = rt_send, .recv = rt_recv, .ctx = NULL };
+    SYN_RouterHandler rh[4];
+    SYN_Router rtr;
+    syn_router_init(&rtr, 0x01, &tr, rh, 4);
+
+    SYN_PendingAck pend[4];
+    syn_router_enable_ack(&rtr, pend, 4, 100, 3); /* timeout=100ms, max=3 */
+    syn_router_register(&rtr, 0x10, rt_handler, NULL);
+
+    uint8_t pl[] = {0xDE, 0xAD};
+    TEST_ASSERT_TRUE(syn_router_send(&rtr, 0x02, 0x10, pl, 2, true));
+    TEST_ASSERT_TRUE(pend[0].active);
+    TEST_ASSERT_EQUAL_INT(0, pend[0].retries);
+
+    /* Advance past timeout — poll should retransmit */
+    mock_tick_advance(200);
+    syn_router_poll(&rtr);
+
+    /* Retries count should have incremented (retransmit executed) */
+    TEST_ASSERT_EQUAL_INT(1, pend[0].retries);
+    /* Packet should still be pending (not dropped yet, max=3) */
+    TEST_ASSERT_TRUE(pend[0].active);
+}
+
+/* ── Test: max retries exceeded — packet dropped ────────────────────────── */
+
+static void test_router_max_retries_drop(void)
+{
+    mock_transport_reset();
+    mock_tick_ms = 0;
+
+    SYN_Transport tr = { .send = rt_send, .recv = rt_recv, .ctx = NULL };
+    SYN_RouterHandler rh[4];
+    SYN_Router rtr;
+    syn_router_init(&rtr, 0x01, &tr, rh, 4);
+
+    SYN_PendingAck pend[4];
+    syn_router_enable_ack(&rtr, pend, 4, 50, 2); /* timeout=50ms, max=2 */
+    syn_router_register(&rtr, 0x10, rt_handler, NULL);
+
+    uint8_t pl[] = {0x01};
+    syn_router_send(&rtr, 0x02, 0x10, pl, 1, true);
+    TEST_ASSERT_TRUE(pend[0].active);
+
+    int drop_before = rtr.drop_count;
+
+    /* Retry 1 */
+    mock_tick_advance(60);
+    syn_router_poll(&rtr);
+    TEST_ASSERT_EQUAL_INT(1, pend[0].retries);
+
+    /* Retry 2 */
+    mock_tick_advance(60);
+    syn_router_poll(&rtr);
+    TEST_ASSERT_EQUAL_INT(2, pend[0].retries);
+
+    /* Now retries >= max_retries → packet dropped */
+    mock_tick_advance(60);
+    syn_router_poll(&rtr);
+    TEST_ASSERT_FALSE(pend[0].active);
+    TEST_ASSERT_EQUAL_INT(drop_before + 1, rtr.drop_count);
+}
+
+/* ── Test: deserialize failure → drop_count++ (line 277) ──────────────── */
+
+static void test_router_deserialize_failure(void)
+{
+    mock_transport_reset();
+    mock_tick_ms = 0;
+
+    SYN_Transport tr = { .send = rt_send, .recv = rt_recv, .ctx = NULL };
+    SYN_RouterHandler rh[4];
+    SYN_Router rtr;
+    syn_router_init(&rtr, 0x01, &tr, rh, 4);
+
+    int drop_before = rtr.drop_count;
+
+    /* Send a packet that's too short to deserialize (< HEADER_SIZE) */
+    rt_rx_buf[0] = 0x01;
+    rt_rx_buf[1] = 0x01;
+    rt_rx_len = 2;  /* far too short — deserialize will fail */
+    rt_rx_rdy = true;
+
+    syn_router_poll(&rtr);
+    /* drop_count should have increased */
+    TEST_ASSERT_EQUAL_INT(drop_before + 1, rtr.drop_count);
+}
+
+/* ── Test: register handler until capacity full → returns false ─────────── */
+
+static void test_router_register_full(void)
+{
+    mock_transport_reset();
+
+    SYN_Transport tr = { .send = rt_send, .recv = rt_recv, .ctx = NULL };
+    SYN_RouterHandler rh[2]; /* only 2 slots */
+    SYN_Router rtr;
+    syn_router_init(&rtr, 0x01, &tr, rh, 2);
+
+    TEST_ASSERT_TRUE(syn_router_register(&rtr, 0x01, rt_handler, NULL));
+    TEST_ASSERT_TRUE(syn_router_register(&rtr, 0x02, rt_handler, NULL));
+    /* Third registration exceeds capacity */
+    TEST_ASSERT_FALSE(syn_router_register(&rtr, 0x03, rt_handler, NULL));
+}
+
+/* ── Test runner ─────────────────────────────────────────────────────── */
+
 void run_router_tests(void)
 {
     RUN_TEST(test_router);
+    RUN_TEST(test_router_send_ack_on_ackreq);
+    RUN_TEST(test_router_pending_table_full);
+    RUN_TEST(test_router_check_retries_retransmit);
+    RUN_TEST(test_router_max_retries_drop);
+    RUN_TEST(test_router_deserialize_failure);
+    RUN_TEST(test_router_register_full);
 }

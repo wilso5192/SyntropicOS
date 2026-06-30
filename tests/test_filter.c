@@ -1,6 +1,6 @@
 /**
  * @file test_filter.c
- * @brief Unity tests for syn_filter.
+ * @brief Unity tests for syn_filter — full coverage (adds reset paths).
  */
 
 #include "unity/unity.h"
@@ -10,7 +10,6 @@
 
 static void test_filters(void)
 {
-
     /* Moving average */
     SYN_FilterMA ma;
     syn_filter_ma_init(&ma, 4);
@@ -60,7 +59,46 @@ static void test_filters(void)
     TEST_ASSERT_EQUAL_INT(100, v);
 }
 
+/** EMA reset — preserves alpha, clears value and primed state */
+static void test_filter_ema_reset(void)
+{
+    SYN_FilterEMA ema;
+    syn_filter_ema_init(&ema, 200); /* alpha = 200 */
+    syn_filter_ema_update(&ema, 500);
+    TEST_ASSERT_TRUE(ema.primed);
+
+    /* Reset — should zero value and primed, keep alpha */
+    syn_filter_ema_reset(&ema);
+    TEST_ASSERT_FALSE(ema.primed);
+    TEST_ASSERT_EQUAL_INT(0, ema.value);
+    TEST_ASSERT_EQUAL_INT(200, ema.alpha); /* preserved */
+
+    /* After reset, next update seeds the filter fresh */
+    int16_t v = syn_filter_ema_update(&ema, 300);
+    TEST_ASSERT_EQUAL_INT(300, v); /* first value = seed */
+}
+
+/** Median reset — preserves window size, clears buffer */
+static void test_filter_median_reset(void)
+{
+    SYN_FilterMedian med;
+    syn_filter_median_init(&med, 5);
+    syn_filter_median_update(&med, 100);
+    syn_filter_median_update(&med, 200);
+    TEST_ASSERT_EQUAL_INT(2, med.count);
+
+    syn_filter_median_reset(&med);
+    TEST_ASSERT_EQUAL_INT(0, med.count);
+    TEST_ASSERT_EQUAL_INT(5, med.window); /* preserved */
+
+    /* After reset, behaves like freshly initialized */
+    int16_t v = syn_filter_median_update(&med, 42);
+    TEST_ASSERT_EQUAL_INT(42, v);
+}
+
 void run_filter_tests(void)
 {
     RUN_TEST(test_filters);
+    RUN_TEST(test_filter_ema_reset);
+    RUN_TEST(test_filter_median_reset);
 }

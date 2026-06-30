@@ -49,7 +49,83 @@ static void test_pid(void)
     TEST_ASSERT_EQUAL(out, syn_pid_output(&pid));
 }
 
+static void test_pid_edge_cases(void)
+{
+    /* 1. Limits setter (syn_pid_set_limits) */
+    SYN_PID pid;
+    SYN_PID_Config cfg = {
+        .kp = 100, .ki = 10, .kd = 50,
+        .scale = 100,
+        .out_min = -1000, .out_max = 1000,
+        .integral_max = 0,
+        .d_filter_alpha = 0,
+    };
+    syn_pid_init(&pid, &cfg);
+
+    syn_pid_set_limits(&pid, -500, 500);
+    TEST_ASSERT_EQUAL_INT(-500, pid.cfg.out_min);
+    TEST_ASSERT_EQUAL_INT(500, pid.cfg.out_max);
+
+    /* Test output is clamped to new limits */
+    int32_t out = syn_pid_update(&pid, 5000, 0, 10);
+    TEST_ASSERT_EQUAL_INT(500, out);
+
+    out = syn_pid_update(&pid, -5000, 0, 10);
+    TEST_ASSERT_EQUAL_INT(-500, out);
+
+    /* 2. EMA filter bypass branch (d_filter_alpha >= 255) */
+    syn_pid_reset(&pid);
+    pid.cfg.d_filter_alpha = 255;
+    out = syn_pid_update(&pid, 100, 0, 10); // first call
+    out = syn_pid_update(&pid, 200, 0, 10); // second call (derivative is active)
+    TEST_ASSERT_EQUAL_INT(500, out);
+    TEST_ASSERT_EQUAL_INT(0, pid.prev_d_filtered); // should not be updated since bypass
+
+    /* 3. Anti-windup saturation branch coverage */
+    SYN_PID pid_aw;
+    SYN_PID_Config cfg_aw = {
+        .kp = 100, .ki = 100, .kd = 0,
+        .scale = 100,
+        .out_min = -10, .out_max = 10,
+        .integral_max = 50000,
+        .d_filter_alpha = 0,
+    };
+    syn_pid_init(&pid_aw, &cfg_aw);
+
+    /* Force positive saturation using huge integral */
+    pid_aw.integral = 5000; // i_term = (100 * 5000) / 100000 = 5.
+    out = syn_pid_update(&pid_aw, 10, 0, 10);
+    TEST_ASSERT_EQUAL_INT(10, out);
+    TEST_ASSERT_EQUAL_INT(5000, pid_aw.integral); // frozen!
+
+    /* Saturated at out_max (10), but error is negative (-10) */
+    pid_aw.integral = 30000;
+    out = syn_pid_update(&pid_aw, -10, 0, 10);
+    TEST_ASSERT_EQUAL_INT(10, out);
+    TEST_ASSERT_EQUAL_INT(29900, pid_aw.integral); // NOT frozen! Decreased from 30000 to 29900.
+
+    /* Saturated at out_min (-10) but error is positive (10) */
+    pid_aw.integral = -30000;
+    out = syn_pid_update(&pid_aw, 10, 0, 10);
+    TEST_ASSERT_EQUAL_INT(-10, out);
+    TEST_ASSERT_EQUAL_INT(-29900, pid_aw.integral); // NOT frozen! Increased from -30000 to -29900.
+
+    /* Verify active anti-windup freezing under negative saturation and negative error */
+    pid_aw.integral = -5000;
+    out = syn_pid_update(&pid_aw, -10, 0, 10);
+    TEST_ASSERT_EQUAL_INT(-10, out);
+    TEST_ASSERT_EQUAL_INT(-5000, pid_aw.integral); // frozen!
+
+    /* 4. Zero Timing Delta (dt_ms = 0) */
+    syn_pid_reset(&pid_aw);
+    pid_aw.cfg.out_max = 1000;
+    out = syn_pid_update(&pid_aw, 10, 0, 0);
+    TEST_ASSERT_EQUAL_INT(10, out);
+    TEST_ASSERT_EQUAL_INT(10, pid_aw.integral); // accumulated with dt = 1
+}
+
 void run_pid_tests(void)
 {
     RUN_TEST(test_pid);
+    RUN_TEST(test_pid_edge_cases);
 }

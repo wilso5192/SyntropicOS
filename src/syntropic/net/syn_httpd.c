@@ -94,6 +94,7 @@ static int parse_request(SYN_Socket sock, SYN_HttpdRequest *req,
 {
     size_t total = 0;
     bool headers_done = false;
+    char *end_of_headers = NULL;
 
     memset(req, 0, sizeof(*req));
     req->client_sock = sock;
@@ -107,7 +108,8 @@ static int parse_request(SYN_Socket sock, SYN_HttpdRequest *req,
         total += (size_t)n;
         buf[total] = '\0';
 
-        if (strstr((const char *)buf, "\r\n\r\n") != NULL) {
+        end_of_headers = strstr((const char *)buf, "\r\n\r\n");
+        if (end_of_headers != NULL) {
             headers_done = true;
         }
     }
@@ -159,8 +161,9 @@ static int parse_request(SYN_Socket sock, SYN_HttpdRequest *req,
         if (hdr_start) hdr_start += 2;
     }
 
-    /* Calculate buffered body */
-    char *end_of_headers = strstr((char *)buf, "\r\n\r\n");
+    /* Calculate buffered body — use the pointer captured before any
+     * null-termination (path/header parsing inserts '\0' into buf,
+     * which would break a strstr re-scan). */
     if (end_of_headers) {
         size_t header_len = (size_t)(end_of_headers + 4 - (char *)buf);
         if (total > header_len) {

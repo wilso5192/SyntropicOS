@@ -1,6 +1,6 @@
 /**
  * @file test_ringbuf.c
- * @brief Unity tests for syn_ringbuf.
+ * @brief Unity tests for syn_ringbuf — full coverage.
  */
 
 #include "unity/unity.h"
@@ -197,6 +197,97 @@ static void test_ringbuf_bulk_partial_read(void)
     TEST_ASSERT_EQUAL_UINT8_ARRAY(data, out, 3);
 }
 
+/** peek on empty buffer — exercises line 79: return false */
+static void test_ringbuf_peek_empty(void)
+{
+    uint8_t buf[8];
+    SYN_RingBuf rb;
+    syn_ringbuf_init(&rb, buf, sizeof(buf));
+
+    uint8_t val;
+    TEST_ASSERT_FALSE(syn_ringbuf_peek(&rb, &val));
+}
+
+/** write on FULL buffer (len clamped to 0) — exercises line 128 */
+static void test_ringbuf_write_full(void)
+{
+    uint8_t buf[4]; /* 3 usable slots */
+    SYN_RingBuf rb;
+    syn_ringbuf_init(&rb, buf, sizeof(buf));
+
+    uint8_t data[] = {1, 2, 3};
+    syn_ringbuf_write(&rb, data, 3); /* fills it */
+    TEST_ASSERT_TRUE(syn_ringbuf_full(&rb));
+
+    /* Writing to full buffer — avail=0, len clamped to 0 → return 0 */
+    uint8_t extra[] = {9};
+    size_t written = syn_ringbuf_write(&rb, extra, 1);
+    TEST_ASSERT_EQUAL_size_t(0, written);
+}
+
+/** read from empty buffer (len clamped to 0) — exercises line 160 */
+static void test_ringbuf_read_empty(void)
+{
+    uint8_t buf[8];
+    SYN_RingBuf rb;
+    syn_ringbuf_init(&rb, buf, sizeof(buf));
+
+    uint8_t out[4];
+    size_t n = syn_ringbuf_read(&rb, out, 4);
+    TEST_ASSERT_EQUAL_size_t(0, n);
+}
+
+/** peek_n with len > avail — clamps len; and peek_n on empty (lines 189-192) */
+static void test_ringbuf_peek_n(void)
+{
+    uint8_t buf[16];
+    SYN_RingBuf rb;
+    syn_ringbuf_init(&rb, buf, sizeof(buf));
+
+    /* peek_n on empty — returns 0 */
+    uint8_t out[8] = {0};
+    size_t n = syn_ringbuf_peek_n(&rb, out, 4);
+    TEST_ASSERT_EQUAL_size_t(0, n);
+
+    /* Write 3 bytes, peek_n for more — clamps to 3 */
+    uint8_t data[] = {0xAA, 0xBB, 0xCC};
+    syn_ringbuf_write(&rb, data, 3);
+    n = syn_ringbuf_peek_n(&rb, out, 8); /* ask for 8, only 3 available */
+    TEST_ASSERT_EQUAL_size_t(3, n);
+    TEST_ASSERT_EQUAL_HEX8(0xAA, out[0]);
+    TEST_ASSERT_EQUAL_HEX8(0xBB, out[1]);
+    TEST_ASSERT_EQUAL_HEX8(0xCC, out[2]);
+    /* Buffer not consumed */
+    TEST_ASSERT_EQUAL_size_t(3, syn_ringbuf_count(&rb));
+}
+
+/** peek_n across wraparound — exercises lines 205-206 (two-part copy) */
+static void test_ringbuf_peek_n_wraparound(void)
+{
+    uint8_t buf[8]; /* 7 usable slots */
+    SYN_RingBuf rb;
+    syn_ringbuf_init(&rb, buf, sizeof(buf));
+
+    /* Advance pointers to near end */
+    uint8_t pad[5] = {1, 2, 3, 4, 5};
+    syn_ringbuf_write(&rb, pad, 5);
+    uint8_t drain[5];
+    syn_ringbuf_read(&rb, drain, 5);
+    /* head and tail at index 5 */
+
+    /* Write 6 bytes that will wrap: [5..7] + [0..2] */
+    uint8_t data[] = {0xB0, 0xB1, 0xB2, 0xB3, 0xB4, 0xB5};
+    syn_ringbuf_write(&rb, data, 6);
+
+    /* peek_n should read across the wrap boundary */
+    uint8_t out[6] = {0};
+    size_t n = syn_ringbuf_peek_n(&rb, out, 6);
+    TEST_ASSERT_EQUAL_size_t(6, n);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(data, out, 6);
+    /* Data still in buffer */
+    TEST_ASSERT_EQUAL_size_t(6, syn_ringbuf_count(&rb));
+}
+
 void run_ringbuf_tests(void)
 {
     RUN_TEST(test_ringbuf_init_empty);
@@ -210,5 +301,10 @@ void run_ringbuf_tests(void)
     RUN_TEST(test_ringbuf_bulk_wraparound);
     RUN_TEST(test_ringbuf_bulk_partial_write);
     RUN_TEST(test_ringbuf_bulk_partial_read);
+    /* New coverage tests */
+    RUN_TEST(test_ringbuf_peek_empty);
+    RUN_TEST(test_ringbuf_write_full);
+    RUN_TEST(test_ringbuf_read_empty);
+    RUN_TEST(test_ringbuf_peek_n);
+    RUN_TEST(test_ringbuf_peek_n_wraparound);
 }
-

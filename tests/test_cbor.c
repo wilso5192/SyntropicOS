@@ -267,6 +267,13 @@ static void test_cbor_read_int_neg1(void)
     TEST_ASSERT_EQUAL(SYN_CBOR_INT, syn_cbor_peek_type(&r));
     TEST_ASSERT_EQUAL_INT64(-1, syn_cbor_read_int(&r));
     TEST_ASSERT_TRUE(syn_cbor_reader_ok(&r));
+
+    // Positive int read via syn_cbor_read_int
+    static const uint8_t pos_data[] = {0x17u}; /* uint(23) */
+    syn_cbor_reader_init(&r, pos_data, sizeof(pos_data));
+    TEST_ASSERT_EQUAL(SYN_CBOR_UINT, syn_cbor_peek_type(&r));
+    TEST_ASSERT_EQUAL_INT64(23, syn_cbor_read_int(&r));
+    TEST_ASSERT_TRUE(syn_cbor_reader_ok(&r));
 }
 
 static void test_cbor_read_bool_true(void)
@@ -381,6 +388,264 @@ static void test_cbor_roundtrip_sensor_map(void)
     TEST_ASSERT_EQUAL_UINT64(60u, hum);
 }
 
+static void test_cbor_read_args_16_32_64_bit(void)
+{
+    // 16-bit uint
+    static const uint8_t u16[] = {0x19u, 0x12u, 0x34u};
+    syn_cbor_reader_init(&r, u16, sizeof(u16));
+    TEST_ASSERT_EQUAL_UINT64(4660u, syn_cbor_read_uint(&r));
+    TEST_ASSERT_TRUE(syn_cbor_reader_ok(&r));
+
+    // 32-bit uint
+    static const uint8_t u32[] = {0x1Au, 0x12u, 0x34u, 0x56u, 0x78u};
+    syn_cbor_reader_init(&r, u32, sizeof(u32));
+    TEST_ASSERT_EQUAL_UINT64(305419896u, syn_cbor_read_uint(&r));
+    TEST_ASSERT_TRUE(syn_cbor_reader_ok(&r));
+
+    // 64-bit uint
+    static const uint8_t u64[] = {0x1Bu, 0x12u, 0x34u, 0x56u, 0x78u, 0x9Au, 0xBCu, 0xDEu, 0xF0u};
+    syn_cbor_reader_init(&r, u64, sizeof(u64));
+    TEST_ASSERT_EQUAL_UINT64(0x123456789ABCDEF0ULL, syn_cbor_read_uint(&r));
+    TEST_ASSERT_TRUE(syn_cbor_reader_ok(&r));
+
+    // 16-bit negative int
+    static const uint8_t i16[] = {0x39u, 0x03u, 0xE7u}; // -1 - 999 = -1000
+    syn_cbor_reader_init(&r, i16, sizeof(i16));
+    TEST_ASSERT_EQUAL_INT64(-1000, syn_cbor_read_int(&r));
+    TEST_ASSERT_TRUE(syn_cbor_reader_ok(&r));
+
+    // 32-bit negative int
+    static const uint8_t i32[] = {0x3Au, 0x00u, 0x0Fu, 0x42u, 0x3Fu}; // -1 - 999999 = -1000000
+    syn_cbor_reader_init(&r, i32, sizeof(i32));
+    TEST_ASSERT_EQUAL_INT64(-1000000, syn_cbor_read_int(&r));
+    TEST_ASSERT_TRUE(syn_cbor_reader_ok(&r));
+}
+
+static void test_cbor_read_reserved_info(void)
+{
+    static const uint8_t res[] = {0x1Cu}; // info = 28 (reserved)
+    syn_cbor_reader_init(&r, res, sizeof(res));
+    (void)syn_cbor_read_uint(&r);
+    TEST_ASSERT_FALSE(syn_cbor_reader_ok(&r));
+}
+
+static void test_cbor_read_underrun(void)
+{
+    // Empty read
+    syn_cbor_reader_init(&r, buf, 0);
+    (void)syn_cbor_read_uint(&r);
+    TEST_ASSERT_FALSE(syn_cbor_reader_ok(&r));
+
+    // Incomplete 16-bit uint
+    static const uint8_t inc16[] = {0x19u, 0x01u};
+    syn_cbor_reader_init(&r, inc16, sizeof(inc16));
+    (void)syn_cbor_read_uint(&r);
+    TEST_ASSERT_FALSE(syn_cbor_reader_ok(&r));
+
+    // Incomplete 32-bit uint
+    static const uint8_t inc32[] = {0x1Au, 0x01u, 0x02u};
+    syn_cbor_reader_init(&r, inc32, sizeof(inc32));
+    (void)syn_cbor_read_uint(&r);
+    TEST_ASSERT_FALSE(syn_cbor_reader_ok(&r));
+
+    // Incomplete 64-bit uint
+    static const uint8_t inc64[] = {0x1Bu, 0x01u, 0x02u, 0x03u};
+    syn_cbor_reader_init(&r, inc64, sizeof(inc64));
+    (void)syn_cbor_read_uint(&r);
+    TEST_ASSERT_FALSE(syn_cbor_reader_ok(&r));
+}
+
+static void test_cbor_peek_null_and_invalid(void)
+{
+    // Peek null
+    static const uint8_t null_data[] = {0xF6u};
+    syn_cbor_reader_init(&r, null_data, sizeof(null_data));
+    TEST_ASSERT_EQUAL(SYN_CBOR_NULL, syn_cbor_peek_type(&r));
+
+    // Peek invalid tag
+    static const uint8_t invalid_data[] = {0xFCu};
+    syn_cbor_reader_init(&r, invalid_data, sizeof(invalid_data));
+    TEST_ASSERT_EQUAL(SYN_CBOR_ERROR, syn_cbor_peek_type(&r));
+
+    // Peek EOF
+    syn_cbor_reader_init(&r, buf, 0);
+    TEST_ASSERT_EQUAL(SYN_CBOR_ERROR, syn_cbor_peek_type(&r));
+}
+
+static void test_cbor_read_array(void)
+{
+    static const uint8_t array_data[] = {0x82u, 0x01u, 0x02u};
+    syn_cbor_reader_init(&r, array_data, sizeof(array_data));
+    TEST_ASSERT_EQUAL_size_t(2u, syn_cbor_read_array_begin(&r));
+    TEST_ASSERT_TRUE(syn_cbor_reader_ok(&r));
+
+    // Type mismatch
+    syn_cbor_reader_init(&r, array_data, sizeof(array_data));
+    (void)syn_cbor_read_map_begin(&r);
+    TEST_ASSERT_FALSE(syn_cbor_reader_ok(&r));
+
+    // End of stream
+    syn_cbor_reader_init(&r, buf, 0);
+    (void)syn_cbor_read_array_begin(&r);
+    TEST_ASSERT_FALSE(syn_cbor_reader_ok(&r));
+}
+
+static void test_cbor_read_null_value(void)
+{
+    static const uint8_t null_data[] = {0xF6u};
+    syn_cbor_reader_init(&r, null_data, sizeof(null_data));
+    syn_cbor_read_null(&r);
+    TEST_ASSERT_TRUE(syn_cbor_reader_ok(&r));
+
+    // Non-null mismatch
+    static const uint8_t true_data[] = {0xF5u};
+    syn_cbor_reader_init(&r, true_data, sizeof(true_data));
+    syn_cbor_read_null(&r);
+    TEST_ASSERT_FALSE(syn_cbor_reader_ok(&r));
+
+    // EOF
+    syn_cbor_reader_init(&r, buf, 0);
+    syn_cbor_read_null(&r);
+    TEST_ASSERT_FALSE(syn_cbor_reader_ok(&r));
+}
+
+static void test_cbor_read_bytes_value(void)
+{
+    static const uint8_t byte_data[] = {0x42u, 0xABu, 0xCDu};
+    uint8_t out[4];
+
+    // Success
+    syn_cbor_reader_init(&r, byte_data, sizeof(byte_data));
+    TEST_ASSERT_EQUAL_size_t(2u, syn_cbor_read_bytes(&r, out, sizeof(out)));
+    TEST_ASSERT_EQUAL_HEX8(0xABu, out[0]);
+    TEST_ASSERT_EQUAL_HEX8(0xCDu, out[1]);
+    TEST_ASSERT_TRUE(syn_cbor_reader_ok(&r));
+
+    // Truncation (cap too small)
+    syn_cbor_reader_init(&r, byte_data, sizeof(byte_data));
+    TEST_ASSERT_EQUAL_size_t(2u, syn_cbor_read_bytes(&r, out, 1u));
+    TEST_ASSERT_EQUAL_HEX8(0xABu, out[0]);
+    TEST_ASSERT_TRUE(syn_cbor_reader_ok(&r));
+
+    // Mismatch
+    static const uint8_t text_data[] = {0x62u, 0x68u, 0x69u}; // "hi"
+    syn_cbor_reader_init(&r, text_data, sizeof(text_data));
+    (void)syn_cbor_read_bytes(&r, out, sizeof(out));
+    TEST_ASSERT_FALSE(syn_cbor_reader_ok(&r));
+
+    // EOF / incomplete data bytes
+    static const uint8_t inc_bytes[] = {0x45u, 0x01u, 0x02u}; // bytes(5), only 2 provided
+    syn_cbor_reader_init(&r, inc_bytes, sizeof(inc_bytes));
+    (void)syn_cbor_read_bytes(&r, out, sizeof(out));
+    TEST_ASSERT_FALSE(syn_cbor_reader_ok(&r));
+}
+
+static void test_cbor_read_scalar_mismatch(void)
+{
+    static const uint8_t null_data[] = {0xF6u};
+    syn_cbor_reader_init(&r, null_data, sizeof(null_data));
+    (void)syn_cbor_read_int(&r);
+    TEST_ASSERT_FALSE(syn_cbor_reader_ok(&r));
+
+    syn_cbor_reader_init(&r, null_data, sizeof(null_data));
+    (void)syn_cbor_read_bool(&r);
+    TEST_ASSERT_FALSE(syn_cbor_reader_ok(&r));
+}
+
+static void test_cbor_skip_edge_cases(void)
+{
+    // float16 skip
+    static const uint8_t f16[] = {0xF9u, 0x3Cu, 0x00u, 0x01u}; // float16 followed by uint(1)
+    syn_cbor_reader_init(&r, f16, sizeof(f16));
+    syn_cbor_skip(&r);
+    TEST_ASSERT_EQUAL_UINT64(1u, syn_cbor_read_uint(&r));
+    TEST_ASSERT_TRUE(syn_cbor_reader_ok(&r));
+
+    // float32 skip
+    static const uint8_t f32[] = {0xFAu, 0x41u, 0xBCu, 0x00u, 0x00u, 0x02u}; // float32 followed by uint(2)
+    syn_cbor_reader_init(&r, f32, sizeof(f32));
+    syn_cbor_skip(&r);
+    TEST_ASSERT_EQUAL_UINT64(2u, syn_cbor_read_uint(&r));
+    TEST_ASSERT_TRUE(syn_cbor_reader_ok(&r));
+
+    // float64 skip
+    static const uint8_t f64[] = {0xFBu, 0,0,0,0,0,0,0,0, 0x03u}; // float64 followed by uint(3)
+    syn_cbor_reader_init(&r, f64, sizeof(f64));
+    syn_cbor_skip(&r);
+    TEST_ASSERT_EQUAL_UINT64(3u, syn_cbor_read_uint(&r));
+    TEST_ASSERT_TRUE(syn_cbor_reader_ok(&r));
+
+    // Nested array overflow (SKIP_MAX_DEPTH is 8)
+    // We send 8 nested arrays of 1 item, ending with uint(0)
+    static const uint8_t nested_overflow[] = {
+        0x81u, // depth 1
+        0x81u, // depth 2
+        0x81u, // depth 3
+        0x81u, // depth 4
+        0x81u, // depth 5
+        0x81u, // depth 6
+        0x81u, // depth 7
+        0x81u, // depth 8 (exceeds SKIP_MAX_DEPTH limit)
+        0x00u
+    };
+    syn_cbor_reader_init(&r, nested_overflow, sizeof(nested_overflow));
+    syn_cbor_skip(&r);
+    TEST_ASSERT_FALSE(syn_cbor_reader_ok(&r));
+
+    // Nested map overflow (SKIP_MAX_DEPTH is 8)
+    // Map with 1 key-value pair, nested 8 levels
+    static const uint8_t nested_map_overflow[] = {
+        0xA1u, 0x01u, // level 1 (key=1, val=nested map)
+        0xA1u, 0x01u, // level 2
+        0xA1u, 0x01u, // level 3
+        0xA1u, 0x01u, // level 4
+        0xA1u, 0x01u, // level 5
+        0xA1u, 0x01u, // level 6
+        0xA1u, 0x01u, // level 7
+        0xA1u, 0x01u, // level 8 (overflows depth limit of 8)
+        0x00u
+    };
+    syn_cbor_reader_init(&r, nested_map_overflow, sizeof(nested_map_overflow));
+    syn_cbor_skip(&r);
+    TEST_ASSERT_FALSE(syn_cbor_reader_ok(&r));
+
+    // Premature EOF during skip (e.g. array of 5, but empty)
+    static const uint8_t inc_skip[] = {0x85u};
+    syn_cbor_reader_init(&r, inc_skip, sizeof(inc_skip));
+    syn_cbor_skip(&r);
+    TEST_ASSERT_FALSE(syn_cbor_reader_ok(&r));
+
+    // Successful skip of array and map (popping level / depth--)
+    static const uint8_t skip_coll[] = {0x81u, 0x01u, 0xA1u, 0x01u, 0x02u}; // array of [1], then map of {1: 2}
+    syn_cbor_reader_init(&r, skip_coll, sizeof(skip_coll));
+    syn_cbor_skip(&r); // skips [1]
+    TEST_ASSERT_TRUE(syn_cbor_reader_ok(&r));
+    syn_cbor_skip(&r); // skips {1: 2}
+    TEST_ASSERT_TRUE(syn_cbor_reader_ok(&r));
+    TEST_ASSERT_TRUE(syn_cbor_reader_done(&r));
+}
+
+/** uint > 0xFFFFFFFF — exercises 8-byte encoding path (lines 74-82 in cbor_write) */
+static void test_cbor_write_uint64(void)
+{
+    syn_cbor_writer_init(&w, buf, sizeof(buf));
+    /* 0x0001_0000_0000 = 4294967296 — requires 8-byte uint64 encoding */
+    syn_cbor_write_uint(&w, UINT64_C(0x100000000));
+    TEST_ASSERT_TRUE(syn_cbor_writer_ok(&w));
+    /* Major type 0, additional info 27 (8-byte follows) */
+    TEST_ASSERT_EQUAL_HEX8(0x1Bu, buf[0]);
+    /* Value: 0x00 0x00 0x00 0x01 0x00 0x00 0x00 0x00 */
+    TEST_ASSERT_EQUAL_HEX8(0x00u, buf[1]);
+    TEST_ASSERT_EQUAL_HEX8(0x00u, buf[2]);
+    TEST_ASSERT_EQUAL_HEX8(0x00u, buf[3]);
+    TEST_ASSERT_EQUAL_HEX8(0x01u, buf[4]);
+    TEST_ASSERT_EQUAL_HEX8(0x00u, buf[5]);
+    TEST_ASSERT_EQUAL_HEX8(0x00u, buf[6]);
+    TEST_ASSERT_EQUAL_HEX8(0x00u, buf[7]);
+    TEST_ASSERT_EQUAL_HEX8(0x00u, buf[8]);
+    TEST_ASSERT_EQUAL_size_t(9u, syn_cbor_writer_len(&w));
+}
+
 /* ── Registration ────────────────────────────────────────────────────────── */
 
 void run_cbor_tests(void)
@@ -392,6 +657,7 @@ void run_cbor_tests(void)
     RUN_TEST(test_cbor_write_uint_255);
     RUN_TEST(test_cbor_write_uint_256);
     RUN_TEST(test_cbor_write_uint_65536);
+    RUN_TEST(test_cbor_write_uint64);   /* NEW: 8-byte encoding */
     RUN_TEST(test_cbor_write_int_neg1);
     RUN_TEST(test_cbor_write_int_neg24);
     RUN_TEST(test_cbor_write_int_neg25);
@@ -419,4 +685,13 @@ void run_cbor_tests(void)
     RUN_TEST(test_cbor_read_type_mismatch_sets_error);
     RUN_TEST(test_cbor_skip_unknown_key);
     RUN_TEST(test_cbor_roundtrip_sensor_map);
+    RUN_TEST(test_cbor_read_args_16_32_64_bit);
+    RUN_TEST(test_cbor_read_reserved_info);
+    RUN_TEST(test_cbor_read_underrun);
+    RUN_TEST(test_cbor_peek_null_and_invalid);
+    RUN_TEST(test_cbor_read_array);
+    RUN_TEST(test_cbor_read_null_value);
+    RUN_TEST(test_cbor_read_bytes_value);
+    RUN_TEST(test_cbor_read_scalar_mismatch);
+    RUN_TEST(test_cbor_skip_edge_cases);
 }

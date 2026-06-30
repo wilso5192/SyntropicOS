@@ -42,7 +42,17 @@ static void test_can(void)
     syn_can_set_filter(&can, 0x100, 0x7FF);
 }
 
+/** syn_can_init failure — exercises line 26 (syn_port_can_init returns false) */
+static void test_can_init_fail(void)
+{
+    SYN_CAN can;
+    mock_can_init_fail = true;
+    SYN_Status st = syn_can_init(&can, 0, 500000);
+    TEST_ASSERT_EQUAL(SYN_ERROR, st);
+}
+
 void run_can_tests(void)
 {
     RUN_TEST(test_can);
+    RUN_TEST(test_can_init_fail);
 }

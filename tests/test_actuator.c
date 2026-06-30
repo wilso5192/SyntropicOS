@@ -45,7 +45,28 @@ static void test_actuator(void)
     TEST_ASSERT_TRUE(act.target_pct == 0);
 }
 
+/** syn_actuator_clear_stall — exercises lines 120-124 */
+static void test_actuator_clear_stall(void)
+{
+    static SYN_DCMotor motor;
+    syn_dc_motor_init(&motor, 12, 13, SYN_DC_MODE_PWM_DIR);
+    SYN_Actuator act;
+    SYN_Actuator_Config cfg = {
+        .dc_motor = &motor, .read_pos = act_read, .read_ctx = NULL,
+        .stroke_min = 0, .stroke_max = 1000, .update_hz = 50,
+        .pid_kp = 100, .pid_scale = 4,
+    };
+    act_mock_pos = 500;
+    syn_actuator_init(&act, &cfg);
+
+    /* Manually mark it as stalled and verify clear works */
+    act.ctrl.stall_active = true;
+    syn_actuator_clear_stall(&act);
+    TEST_ASSERT_FALSE(syn_actuator_is_stalled(&act));
+}
+
 void run_actuator_tests(void)
 {
     RUN_TEST(test_actuator);
+    RUN_TEST(test_actuator_clear_stall);
 }

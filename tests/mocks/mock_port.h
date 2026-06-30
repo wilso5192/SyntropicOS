@@ -47,9 +47,28 @@ extern uint16_t mock_adc_value;
 
 extern uint8_t mock_flash[MOCK_FLASH_SIZE];
 
+/**
+ * If set >= 0, the next flash read/write/erase touching this byte offset
+ * returns SYN_ERROR (one-shot: reset to -1 after triggering).
+ */
+extern int32_t mock_flash_fail_at;
+/** Set true to make the next flash write (only) fail. One-shot. */
+extern bool    mock_flash_write_fail_next;
+
 /* ── Sleep ──────────────────────────────────────────────────────────────── */
 
 extern int mock_sleep_count;
+
+/* ── UART ───────────────────────────────────────────────────────────────── */
+
+#define MOCK_UART_BUF_SIZE 256
+
+extern uint8_t mock_uart_rx_buf[MOCK_UART_BUF_SIZE];
+extern size_t  mock_uart_rx_len;
+extern size_t  mock_uart_rx_pos;
+extern uint8_t mock_uart_tx_buf[MOCK_UART_BUF_SIZE];
+extern size_t  mock_uart_tx_len;
+extern bool    mock_uart_init_fail;
 
 /* ── CAN ────────────────────────────────────────────────────────────────── */
 
@@ -58,6 +77,8 @@ extern int mock_sleep_count;
 extern SYN_CAN_Frame mock_can_rx;
 extern bool           mock_can_rx_avail;
 extern bool           mock_can_tx_ok;
+/** Set true to make the next syn_port_can_init() return false (one-shot). */
+extern bool           mock_can_init_fail;
 
 /* ── SPI ────────────────────────────────────────────────────────────────── */
 
@@ -85,6 +106,9 @@ extern size_t   mock_sock_tx_len;
 extern bool     mock_sock_connected;
 extern void (*mock_sock_connect_cb)(const char *host, uint16_t port);
 extern bool     mock_sock_eof_on_empty;
+extern bool     mock_sock_connect_fail;
+extern bool     mock_sock_send_fail;
+extern int      mock_sock_send_fail_after_bytes;
 
 /* Server-side mock */
 extern bool     mock_sock_listen_ok;
@@ -101,6 +125,7 @@ extern size_t       mock_udp_tx_len;
 extern SYN_SockAddr mock_udp_tx_to;
 extern bool         mock_udp_open_ok;
 extern bool         mock_udp_multicast_join_ok;
+extern bool         mock_udp_sendto_fail;
 
 void mock_udp_set_response(const void *data, size_t len, const SYN_SockAddr *from);
 

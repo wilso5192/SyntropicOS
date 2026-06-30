@@ -86,9 +86,19 @@ void test_datalog_read_buffer_too_small(void) {
     TEST_ASSERT_EQUAL(0, syn_datalog_get_dropped(&datalog));
 }
 
+/** Read from empty datalog — exercises line 49: return 0 */
+void test_datalog_read_empty(void) {
+    syn_datalog_init(&datalog, backing, sizeof(backing));
+    uint16_t id = 0;
+    uint8_t out[8] = {0};
+    size_t n = syn_datalog_read(&datalog, &id, out, sizeof(out));
+    TEST_ASSERT_EQUAL_size_t(0, n);
+}
+
 void run_datalog_tests(void) {
     RUN_TEST(test_datalog_init);
     RUN_TEST(test_datalog_write_read);
     RUN_TEST(test_datalog_overflow);
     RUN_TEST(test_datalog_read_buffer_too_small);
+    RUN_TEST(test_datalog_read_empty);
 }

@@ -41,7 +41,91 @@ static void test_ramp(void)
     TEST_ASSERT_TRUE(syn_ramp_value(&r) == -100);
 }
 
+/** Linear ramp already at target — exercises lines 65-67 (diff==0, done=true) */
+static void test_ramp_already_at_target(void)
+{
+    SYN_Ramp r;
+    syn_ramp_init(&r, 500);
+    syn_ramp_set_target(&r, 500, 10); /* target == current */
+    syn_ramp_update(&r);              /* diff == 0 → done = true */
+    TEST_ASSERT_TRUE(syn_ramp_done(&r));
+    TEST_ASSERT_EQUAL_INT(500, syn_ramp_value(&r));
+}
+
+/** S-curve with negative velocity during deceleration — exercises lines 113-115 */
+static void test_ramp_scurve_negative_velocity_decel(void)
+{
+    SYN_Ramp r;
+    syn_ramp_init(&r, 1000);
+    /* Set target below current to force negative velocity */
+    syn_ramp_set_target_scurve(&r, 0, 50, 5);
+
+    /* Run until done or max iterations */
+    int iters = 0;
+    while (!syn_ramp_done(&r) && iters < 2000) {
+        syn_ramp_update(&r);
+        iters++;
+    }
+    TEST_ASSERT_TRUE(syn_ramp_done(&r));
+    TEST_ASSERT_EQUAL_INT(0, syn_ramp_value(&r));
+}
+
+/** S-curve already at target — exercises lines 89-91 (diff==0 && vel==0) */
+static void test_ramp_scurve_at_target(void)
+{
+    SYN_Ramp r;
+    syn_ramp_init(&r, 200);
+    syn_ramp_set_target_scurve(&r, 200, 50, 5); /* same as current */
+    syn_ramp_update(&r);
+    TEST_ASSERT_TRUE(syn_ramp_done(&r));
+}
+
+/** update_linear: diff==0 path — exercises lines 65-67.
+ *  Requires calling update when target==current but done is still false.
+ *  This happens when the ramp steps exactly onto the target (line 76 sets done)
+ *  then a second call hits the diff==0 path before done is checked by the caller.
+ *  Trick: set target to current+1, rate=1 — first update steps to target,
+ *  sets done=true via line 76. Lines 65-67 are reached when update_linear
+ *  is called with diff already 0 on first entry. We force this by initializing
+ *  current==target but done=false directly.
+ */
+static void test_ramp_linear_done_at_diff_zero(void)
+{
+    SYN_Ramp r;
+    syn_ramp_init(&r, 100);
+    syn_ramp_set_target(&r, 101, 1); /* 1 step away */
+    r.done = false; /* ensure not short-circuited */
+    /* First update: diff=1, steps to 101, sets done=true via line 76 */
+    syn_ramp_update(&r);
+    TEST_ASSERT_EQUAL_INT(101, r.current);
+    TEST_ASSERT_TRUE(r.done);
+
+    /* Force another call with diff==0 but done=false to hit lines 65-67 */
+    r.done = false;
+    int32_t v = syn_ramp_update(&r); /* diff==0 → hits lines 65-67 */
+    TEST_ASSERT_EQUAL_INT(101, v);
+    TEST_ASSERT_TRUE(r.done);
+}
+
+/** update_scurve: diff==0&&vel==0 path — exercises lines 89-91. */
+static void test_ramp_scurve_done_at_diff_zero(void)
+{
+    SYN_Ramp r;
+    syn_ramp_init(&r, 200);
+    syn_ramp_set_target_scurve(&r, 200, 50, 5);
+    /* Already at target, velocity=0, done=true. Force done=false to enter update_scurve */
+    r.done = false;
+    int32_t v = syn_ramp_update(&r); /* diff==0 && vel==0 → hits lines 89-91 */
+    TEST_ASSERT_EQUAL_INT(200, v);
+    TEST_ASSERT_TRUE(r.done);
+}
+
 void run_ramp_tests(void)
 {
     RUN_TEST(test_ramp);
+    RUN_TEST(test_ramp_already_at_target);
+    RUN_TEST(test_ramp_scurve_negative_velocity_decel);
+    RUN_TEST(test_ramp_scurve_at_target);
+    RUN_TEST(test_ramp_linear_done_at_diff_zero);
+    RUN_TEST(test_ramp_scurve_done_at_diff_zero);
 }

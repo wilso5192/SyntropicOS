@@ -79,7 +79,32 @@ static void test_sequencer(void)
     TEST_ASSERT_TRUE(syn_seq_is_done(&seq));
 }
 
+/** syn_seq_update on DONE/IDLE state — exercises line 85: returns false */
+static void test_sequencer_update_when_done(void)
+{
+    mock_tick_ms = 0;
+    static const SYN_SeqStep steps[] = {
+        { seq_action_a, NULL, 0 },
+    };
+    SYN_Sequencer seq;
+    syn_seq_init(&seq, steps, 1);
+
+    /* Before start: IDLE → update returns false */
+    bool result = syn_seq_update(&seq);
+    TEST_ASSERT_FALSE(result);
+
+    /* Run to completion */
+    syn_seq_start(&seq);
+    syn_seq_update(&seq);
+    TEST_ASSERT_TRUE(syn_seq_is_done(&seq));
+
+    /* After done: update again returns false */
+    result = syn_seq_update(&seq);
+    TEST_ASSERT_FALSE(result);
+}
+
 void run_sequencer_tests(void)
 {
     RUN_TEST(test_sequencer);
+    RUN_TEST(test_sequencer_update_when_done);
 }

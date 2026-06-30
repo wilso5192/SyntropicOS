@@ -80,7 +80,124 @@ static void test_sensor(void)
     TEST_ASSERT_EQUAL_INT(123, v);
 }
 
+static void test_sensor_filters_and_edge_cases(void)
+{
+    mock_tick_ms = 0;
+    sensor_high_count = 0;
+    sensor_low_count  = 0;
+
+    SYN_Sensor s;
+    syn_sensor_init(&s, "temp", mock_sensor_read, NULL);
+
+    /* 1. Moving Average (MA) filter */
+    SYN_FilterMA ma;
+    syn_filter_ma_init(&ma, 4);
+    syn_sensor_set_filter_ma(&s, &ma);
+
+    mock_sensor_value = 100;
+    syn_sensor_read_now(&s);
+    TEST_ASSERT_EQUAL_INT(100, s.filtered);
+
+    mock_sensor_value = 200;
+    syn_sensor_read_now(&s);
+    TEST_ASSERT_EQUAL_INT(150, s.filtered);
+
+    /* 2. Median filter */
+    SYN_FilterMedian median;
+    syn_filter_median_init(&median, 3);
+    syn_sensor_set_filter_median(&s, &median);
+
+    mock_sensor_value = 10;
+    syn_sensor_read_now(&s);
+    TEST_ASSERT_EQUAL_INT(10, s.filtered);
+
+    mock_sensor_value = 30;
+    syn_sensor_read_now(&s);
+    TEST_ASSERT_EQUAL_INT(30, s.filtered);
+
+    mock_sensor_value = 20;
+    syn_sensor_read_now(&s);
+    TEST_ASSERT_EQUAL_INT(20, s.filtered); // median of 10, 30, 20 is 20
+
+    /* 3. Threshold Callbacks NULL Safety */
+    syn_sensor_clear_filter(&s);
+    syn_sensor_set_threshold(&s, 500, 50, NULL, NULL, NULL);
+
+    /* Cross high threshold */
+    mock_sensor_value = 600;
+    syn_sensor_read_now(&s);
+    TEST_ASSERT_TRUE(syn_hyst_state(&s.hyst));
+
+    /* Cross low threshold */
+    mock_sensor_value = 400;
+    syn_sensor_read_now(&s);
+    TEST_ASSERT_FALSE(syn_hyst_state(&s.hyst));
+
+    /* 4. Threshold Callback Triggering & Clearing */
+    syn_sensor_set_threshold(&s, 500, 50, sensor_on_high, sensor_on_low, NULL);
+    
+    mock_sensor_value = 600;
+    syn_sensor_read_now(&s);
+    TEST_ASSERT_EQUAL_INT(1, sensor_high_count);
+
+    mock_sensor_value = 400;
+    syn_sensor_read_now(&s);
+    TEST_ASSERT_EQUAL_INT(1, sensor_low_count);
+
+    /* Clear threshold */
+    syn_sensor_clear_threshold(&s);
+    sensor_high_count = 0;
+    sensor_low_count = 0;
+    mock_sensor_value = 600;
+    syn_sensor_read_now(&s);
+    TEST_ASSERT_EQUAL_INT(0, sensor_high_count);
+
+    /* 5. Statistics Window integration */
+    SYN_Signal stats;
+    int32_t stats_buf[8];
+    syn_signal_init(&stats, stats_buf, 8);
+    syn_sensor_set_stats(&s, &stats);
+
+    mock_sensor_value = 50;
+    syn_sensor_read_now(&s);
+    TEST_ASSERT_EQUAL_INT(50, (int)syn_signal_latest(&stats));
+
+    syn_sensor_set_stats(&s, NULL);
+
+    /* 6. Enable / Disable resetting poll tick */
+    syn_sensor_enable(&s, false);
+    TEST_ASSERT_FALSE(s.enabled);
+
+    mock_tick_advance(100);
+    syn_sensor_enable(&s, true);
+    TEST_ASSERT_TRUE(s.enabled);
+    TEST_ASSERT_EQUAL_UINT32(mock_tick_ms, s.last_poll_tick);
+
+    /* 7. Bulk Service update */
+    SYN_Sensor sensors[2];
+    syn_sensor_init(&sensors[0], "s0", mock_sensor_read, NULL);
+    syn_sensor_init(&sensors[1], "s1", mock_sensor_read, NULL);
+    syn_sensor_set_interval(&sensors[0], 100);
+    syn_sensor_set_interval(&sensors[1], 100);
+
+    mock_tick_advance(100);
+    mock_sensor_value = 99;
+    syn_sensor_service(sensors, 2);
+    TEST_ASSERT_EQUAL_INT(99, sensors[0].filtered);
+    TEST_ASSERT_EQUAL_INT(99, sensors[1].filtered);
+
+    syn_sensor_service(NULL, 0);
+
+    /* 8. Default filter type case (filter != NULL, but filter_type is NONE) */
+    s.filter = &ma;
+    s.filter_type = SYN_SENSOR_FILTER_NONE;
+    mock_sensor_value = 42;
+    syn_sensor_read_now(&s);
+    TEST_ASSERT_EQUAL_INT(42, s.filtered);
+}
+
 void run_sensor_tests(void)
 {
     RUN_TEST(test_sensor);
+    RUN_TEST(test_sensor_filters_and_edge_cases);
 }

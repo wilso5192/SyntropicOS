@@ -259,6 +259,37 @@ static void test_canvas_clip_rect_reset(void)
     TEST_ASSERT_TRUE(fb[0] & 0x01);
 }
 
+/** syn_canvas_set_font — exercises lines 176-180 */
+static void test_canvas_set_font(void)
+{
+    static uint8_t fb2[32];
+    SYN_Canvas c;
+    syn_canvas_init(&c, fb2, 32, 8, 1, cvs_flush, NULL);
+
+    /* Set to the built-in font */
+    syn_canvas_set_font(&c, &syn_font_5x7);
+    TEST_ASSERT_EQUAL_PTR(&syn_font_5x7, c.font);
+
+    /* Set to NULL — should revert to default */
+    syn_canvas_set_font(&c, NULL);
+    TEST_ASSERT_EQUAL_PTR(&syn_font_5x7, c.font);
+}
+
+/** 16-bit color canvas fill — exercises lines 195-199 (2-byte fill path) */
+static void test_canvas_16bit_clear(void)
+{
+    static uint8_t fb16[64]; /* 32 pixels x 2 bytes each */
+    SYN_Canvas c;
+    /* bpp=16 for 16-bit display (buf_size must hold w*h*2 bytes) */
+    syn_canvas_init(&c, fb16, 32, 16, 16, cvs_flush, NULL);
+
+    /* Color > 0xFF triggers hi/lo byte path (lines 195-199) */
+    syn_canvas_fill(&c, 0xF800u); /* Red in RGB565 */
+    /* First two bytes should be 0xF8 and 0x00 */
+    TEST_ASSERT_EQUAL_HEX8(0xF8u, fb16[0]);
+    TEST_ASSERT_EQUAL_HEX8(0x00u, fb16[1]);
+}
+
 void run_canvas_tests(void)
 {
     RUN_TEST(test_canvas);
@@ -268,4 +299,6 @@ void run_canvas_tests(void)
     RUN_TEST(test_canvas_flush_partial_simulated_chunked_loop);
     RUN_TEST(test_canvas_clip_rect);
     RUN_TEST(test_canvas_clip_rect_reset);
+    RUN_TEST(test_canvas_set_font);
+    RUN_TEST(test_canvas_16bit_clear);
 }

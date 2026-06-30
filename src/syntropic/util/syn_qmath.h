@@ -32,8 +32,8 @@ extern "C" {
 typedef int32_t q16_t;
 
 #define Q16_SHIFT    16                               /**< Fractional bit count       */
-#define Q16_ONE      ((q16_t)(1 << Q16_SHIFT))         /**< 1.0 in Q16.16              */
-#define Q16_HALF     ((q16_t)(1 << (Q16_SHIFT - 1)))   /**< 0.5 in Q16.16              */
+#define Q16_ONE      ((q16_t)(1L << Q16_SHIFT))        /**< 1.0 in Q16.16              */
+#define Q16_HALF     ((q16_t)(1L << (Q16_SHIFT - 1)))  /**< 0.5 in Q16.16              */
 
 /* ── Conversion macros ──────────────────────────────────────────────────── */
 
@@ -44,7 +44,7 @@ typedef int32_t q16_t;
 #define Q16_FROM_FRAC(num, den) ((q16_t)(((int64_t)(num) << Q16_SHIFT) / (den)))
 
 /** Float literal to Q16 (compile-time only, avoid at runtime). */
-#define Q16_FROM_FLOAT(f)     ((q16_t)((f) * (1 << Q16_SHIFT)))
+#define Q16_FROM_FLOAT(f)     ((q16_t)((f) * (1L << Q16_SHIFT)))
 
 /** Q16 to integer (truncates toward zero). */
 #define Q16_TO_INT(q)         ((int32_t)((q) >> Q16_SHIFT))

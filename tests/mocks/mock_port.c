@@ -84,16 +84,52 @@ SYN_Status syn_port_gpio_toggle(SYN_GPIO_Pin pin)
 
 /* ── UART ───────────────────────────────────────────────────────────────── */
 
-SYN_Status syn_port_uart_init(SYN_UARTInstance i, uint32_t b)    { (void)i; (void)b; return SYN_OK; }
+uint8_t mock_uart_rx_buf[MOCK_UART_BUF_SIZE];
+size_t  mock_uart_rx_len = 0;
+size_t  mock_uart_rx_pos = 0;
+uint8_t mock_uart_tx_buf[MOCK_UART_BUF_SIZE];
+size_t  mock_uart_tx_len = 0;
+
+bool    mock_uart_init_fail = false;
+SYN_Status syn_port_uart_init(SYN_UARTInstance i, uint32_t b)    { (void)i; (void)b; return mock_uart_init_fail ? SYN_ERROR : SYN_OK; }
 SYN_Status syn_port_uart_deinit(SYN_UARTInstance i)              { (void)i; return SYN_OK; }
+
 SYN_Status syn_port_uart_transmit(SYN_UARTInstance i, const uint8_t *d, size_t l, uint32_t t)
-    { (void)i; (void)d; (void)l; (void)t; return SYN_OK; }
+{
+    (void)i; (void)t;
+    for (size_t idx = 0; idx < l; idx++) {
+        if (mock_uart_tx_len < MOCK_UART_BUF_SIZE) {
+            mock_uart_tx_buf[mock_uart_tx_len++] = d[idx];
+        }
+    }
+    return SYN_OK;
+}
+
 SYN_Status syn_port_uart_receive(SYN_UARTInstance i, uint8_t *d, size_t l, size_t *r, uint32_t t)
-    { (void)i; (void)d; (void)l; (void)r; (void)t; return SYN_OK; }
+{
+    (void)i; (void)t;
+    size_t idx = 0;
+    while (idx < l && mock_uart_rx_pos < mock_uart_rx_len) {
+        d[idx++] = mock_uart_rx_buf[mock_uart_rx_pos++];
+    }
+    if (r) *r = idx;
+    return (idx == l) ? SYN_OK : SYN_TIMEOUT;
+}
+
 SYN_Status syn_port_uart_transmit_byte(SYN_UARTInstance i, uint8_t b)
-    { (void)i; (void)b; return SYN_OK; }
+{
+    return syn_port_uart_transmit(i, &b, 1, 0);
+}
+
 SYN_Status syn_port_uart_receive_byte(SYN_UARTInstance i, uint8_t *b, uint32_t t)
-    { (void)i; (void)b; (void)t; return SYN_OK; }
+{
+    (void)i; (void)t;
+    if (mock_uart_rx_pos < mock_uart_rx_len) {
+        *b = mock_uart_rx_buf[mock_uart_rx_pos++];
+        return SYN_OK;
+    }
+    return SYN_TIMEOUT;
+}
 
 /* ── Assert handler ─────────────────────────────────────────────────────── */
 
@@ -106,9 +142,17 @@ void syn_assert_failed(const char *file, int line)
 /* ── Flash ──────────────────────────────────────────────────────────────── */
 
 uint8_t mock_flash[MOCK_FLASH_SIZE];
+int32_t mock_flash_fail_at = -1;
+bool    mock_flash_write_fail_next = false; /* fails the next write only (one-shot) */
 
 SYN_Status syn_port_flash_erase(uint32_t addr)
 {
+    if (mock_flash_fail_at >= 0 &&
+        (uint32_t)mock_flash_fail_at >= addr &&
+        (uint32_t)mock_flash_fail_at < addr + MOCK_FLASH_SECTOR) {
+        mock_flash_fail_at = -1; /* one-shot */
+        return SYN_ERROR;
+    }
     if (addr + MOCK_FLASH_SECTOR > MOCK_FLASH_SIZE) return SYN_ERROR;
     memset(&mock_flash[addr], 0xFF, MOCK_FLASH_SECTOR);
     return SYN_OK;
@@ -116,6 +160,12 @@ SYN_Status syn_port_flash_erase(uint32_t addr)
 
 SYN_Status syn_port_flash_read(uint32_t addr, void *buf, size_t len)
 {
+    if (mock_flash_fail_at >= 0 &&
+        (uint32_t)mock_flash_fail_at >= addr &&
+        (uint32_t)mock_flash_fail_at < addr + len) {
+        mock_flash_fail_at = -1;
+        return SYN_ERROR;
+    }
     if (addr + len > MOCK_FLASH_SIZE) return SYN_ERROR;
     memcpy(buf, &mock_flash[addr], len);
     return SYN_OK;
@@ -123,6 +173,16 @@ SYN_Status syn_port_flash_read(uint32_t addr, void *buf, size_t len)
 
 SYN_Status syn_port_flash_write(uint32_t addr, const void *buf, size_t len)
 {
+    if (mock_flash_write_fail_next) {
+        mock_flash_write_fail_next = false; /* one-shot */
+        return SYN_ERROR;
+    }
+    if (mock_flash_fail_at >= 0 &&
+        (uint32_t)mock_flash_fail_at >= addr &&
+        (uint32_t)mock_flash_fail_at < addr + len) {
+        mock_flash_fail_at = -1;
+        return SYN_ERROR;
+    }
     if (addr + len > MOCK_FLASH_SIZE) return SYN_ERROR;
     const uint8_t *src = (const uint8_t *)buf;
     for (size_t i = 0; i < len; i++) {
@@ -181,8 +241,9 @@ SYN_CAN_Frame mock_can_rx;
 bool           mock_can_rx_avail = false;
 bool           mock_can_tx_ok = true;
 
+bool mock_can_init_fail = false;
 bool syn_port_can_init(uint8_t p, uint32_t br)
-    { (void)p; (void)br; return true; }
+    { (void)p; (void)br; if (mock_can_init_fail) { mock_can_init_fail = false; return false; } return true; }
 
 bool syn_port_can_send(uint8_t p, uint32_t id, bool ext, const uint8_t *d, uint8_t dl)
     { (void)p; (void)id; (void)ext; (void)d; (void)dl; return mock_can_tx_ok; }
@@ -352,6 +413,9 @@ uint8_t  mock_sock_tx_buf[MOCK_SOCK_BUF_SIZE];
 size_t   mock_sock_tx_len;
 bool     mock_sock_connected;
 bool     mock_sock_eof_on_empty = false;
+bool     mock_sock_connect_fail = false;
+bool     mock_sock_send_fail = false;
+int      mock_sock_send_fail_after_bytes = -1;
 
 /* Server-side mock */
 bool     mock_sock_listen_ok = true;    /**< syn_port_sock_listen returns ok */
@@ -369,6 +433,10 @@ void (*mock_sock_connect_cb)(const char *host, uint16_t port) = NULL;
 
 SYN_Socket syn_port_sock_connect(const SYN_SockAddr *addr)
 {
+    if (mock_sock_connect_fail) {
+        mock_sock_connected = false;
+        return -1;
+    }
     mock_sock_connected = true;
     mock_sock_rx_pos = 0;
     mock_sock_tx_len = 0;
@@ -382,6 +450,10 @@ SYN_Socket syn_port_sock_connect(const SYN_SockAddr *addr)
 
 SYN_Socket syn_port_sock_connect_host(const char *host, uint16_t port)
 {
+    if (mock_sock_connect_fail) {
+        mock_sock_connected = false;
+        return -1;
+    }
     mock_sock_connected = true;
     mock_sock_rx_pos = 0;
     mock_sock_tx_len = 0;
@@ -394,8 +466,13 @@ SYN_Socket syn_port_sock_connect_host(const char *host, uint16_t port)
 int syn_port_sock_send(SYN_Socket sock, const void *data, size_t len)
 {
     (void)sock;
-    if (!mock_sock_connected) return -1;
+    if (!mock_sock_connected || mock_sock_send_fail) return -1;
+    if (mock_sock_send_fail_after_bytes >= 0 && (int)mock_sock_tx_len >= mock_sock_send_fail_after_bytes) return -1;
     size_t space = MOCK_SOCK_BUF_SIZE - mock_sock_tx_len;
+    if (mock_sock_send_fail_after_bytes >= 0) {
+        size_t limit = (size_t)(mock_sock_send_fail_after_bytes - (int)mock_sock_tx_len);
+        if (space > limit) space = limit;
+    }
     if (len > space) len = space;
     memcpy(mock_sock_tx_buf + mock_sock_tx_len, data, len);
     mock_sock_tx_len += len;
@@ -405,7 +482,8 @@ int syn_port_sock_send(SYN_Socket sock, const void *data, size_t len)
 int syn_port_sock_send_all(SYN_Socket sock, const void *data, size_t len)
 {
     (void)sock;
-    if (!mock_sock_connected) return -1;
+    if (!mock_sock_connected || mock_sock_send_fail) return -1;
+    if (mock_sock_send_fail_after_bytes >= 0 && (int)mock_sock_tx_len + (int)len > mock_sock_send_fail_after_bytes) return -1;
     size_t space = MOCK_SOCK_BUF_SIZE - mock_sock_tx_len;
     if (len > space) return -1;
     memcpy(mock_sock_tx_buf + mock_sock_tx_len, data, len);
@@ -446,6 +524,7 @@ size_t       mock_udp_tx_len = 0;
 SYN_SockAddr mock_udp_tx_to;
 bool         mock_udp_open_ok = true;
 bool         mock_udp_multicast_join_ok = true;
+bool         mock_udp_sendto_fail = false;
 
 void mock_udp_set_response(const void *data, size_t len, const SYN_SockAddr *from)
 {
@@ -470,6 +549,7 @@ int syn_port_udp_sendto(SYN_Socket sock, const void *data, size_t len,
                         const SYN_SockAddr *to)
 {
     (void)sock;
+    if (mock_udp_sendto_fail) return -1;
     if (to != NULL) {
         mock_udp_tx_to = *to;
     }
@@ -529,6 +609,7 @@ void mock_port_reset(void)
     }
     mock_adc_value = 2048;
     memset(mock_flash, 0xFF, sizeof(mock_flash));
+    mock_flash_fail_at = -1;
     mock_sleep_count = 0;
     memset(&mock_can_rx, 0, sizeof(mock_can_rx));
     mock_can_rx_avail = false;
@@ -568,6 +649,9 @@ void mock_port_reset(void)
     mock_sock_accept_ok = true;
     mock_sock_connect_cb = NULL;
     mock_sock_eof_on_empty = false;
+    mock_sock_connect_fail = false;
+    mock_sock_send_fail = false;
+    mock_sock_send_fail_after_bytes = -1;
 
     /* UDP Mock */
     memset(mock_udp_rx_buf, 0, sizeof(mock_udp_rx_buf));
@@ -579,5 +663,14 @@ void mock_port_reset(void)
     memset(&mock_udp_tx_to, 0, sizeof(mock_udp_tx_to));
     mock_udp_open_ok = true;
     mock_udp_multicast_join_ok = true;
+    mock_udp_sendto_fail = false;
+
+    /* UART Mock */
+    memset(mock_uart_rx_buf, 0, sizeof(mock_uart_rx_buf));
+    mock_uart_rx_len = 0;
+    mock_uart_rx_pos = 0;
+    memset(mock_uart_tx_buf, 0, sizeof(mock_uart_tx_buf));
+    mock_uart_tx_len = 0;
+    mock_uart_init_fail = false;
 }
 

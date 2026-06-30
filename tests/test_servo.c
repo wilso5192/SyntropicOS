@@ -55,7 +55,41 @@ static void test_servo(void)
     TEST_ASSERT_EQUAL_INT(2000, syn_servo_get_pulse_us(&servo));
 }
 
+/** duration=0 → immediate snap (lines 92-94) */
+static void test_servo_move_immediate(void)
+{
+    mock_tick_ms = 0;
+    SYN_Servo servo;
+    syn_servo_init(&servo, 1000, 2000, 180);
+    syn_servo_set_angle(&servo, 0);
+
+    /* duration=0 → current_us = target immediately, rate=0 */
+    syn_servo_move_to(&servo, 180, 0);
+    TEST_ASSERT_EQUAL_INT(2000, syn_servo_get_pulse_us(&servo));
+    TEST_ASSERT_TRUE(syn_servo_at_target(&servo));
+}
+
+/** Very tiny delta and large duration → rate rounds to 0, clamped to ±1 (line 102) */
+static void test_servo_rate_clamp(void)
+{
+    mock_tick_ms = 0;
+    SYN_Servo servo;
+    syn_servo_init(&servo, 1000, 2000, 180);
+    syn_servo_set_angle(&servo, 89); /* 1494µs */
+
+    /* delta = 1µs, duration = 1000ms → rate = (1*256)/1000 = 0 → clamped to +1 */
+    syn_servo_move_to(&servo, 90, 1000); /* 1-degree step over 1 second */
+    TEST_ASSERT_FALSE(syn_servo_at_target(&servo));
+
+    mock_tick_advance(50);
+    syn_servo_update(&servo);
+    /* Should have moved by at least 1µs */
+    TEST_ASSERT_FALSE(syn_servo_at_target(&servo));
+}
+
 void run_servo_tests(void)
 {
     RUN_TEST(test_servo);
+    RUN_TEST(test_servo_move_immediate);
+    RUN_TEST(test_servo_rate_clamp);
 }

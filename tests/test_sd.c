@@ -34,6 +34,7 @@
 #include "unity/unity.h"
 #include "mocks/mock_port.h"
 #include "syntropic/drivers/syn_sd.h"
+#include <string.h>
 
 /* ── Canned SDHC init response ──────────────────────────────────────────── */
 
@@ -226,6 +227,120 @@ static void test_sd_sync(void)
     TEST_ASSERT_EQUAL(SYN_ERROR, syn_sd_sync(&sd));
 }
 
+/** CMD0 fails (not IDLE) — exercises line 241 (cs deassert + error) */
+static void test_sd_init_cmd0_fail(void)
+{
+    SYN_SD sd;
+    /* CMD0 R1 poll returns error byte (not 0x01) */
+    uint8_t rx[] = { 0xFF, 0x04 }; /* 0x04 = some error bit */
+    mock_spi_set_response(rx, sizeof(rx));
+    TEST_ASSERT_EQUAL(SYN_ERROR, syn_sd_init(&sd, 0, (SYN_GPIO_Pin)0));
+}
+
+/** CMD8 R7 voltage mismatch — exercises line 248-249 */
+static void test_sd_init_cmd8_voltage_mismatch(void)
+{
+    SYN_SD sd;
+    uint8_t rx[] = {
+        /* CMD0 R1 poll */ 0xFF, 0x01,
+        /* CMD8 R1      */ 0x01,
+        /* CMD8 R7 payload — wrong echo byte (0xBB != 0xAA) */
+        0x00, 0x00, 0x01, 0xBB,
+    };
+    mock_spi_set_response(rx, sizeof(rx));
+    TEST_ASSERT_EQUAL(SYN_ERROR, syn_sd_init(&sd, 0, (SYN_GPIO_Pin)0));
+}
+
+/** CMD55 error during ACMD41 loop — exercises line 259-260 */
+static void test_sd_init_cmd55_error(void)
+{
+    SYN_SD sd;
+    uint8_t rx[] = {
+        /* CMD0 R1 poll */ 0xFF, 0x01,
+        /* CMD8 R1      */ 0x01,
+        /* CMD8 R7      */ 0x00, 0x00, 0x01, 0xAA,
+        /* CMD55 R1: error bits set (not just IDLE) */
+        0x04,
+    };
+    mock_spi_set_response(rx, sizeof(rx));
+    TEST_ASSERT_EQUAL(SYN_ERROR, syn_sd_init(&sd, 0, (SYN_GPIO_Pin)0));
+}
+
+/** CSD read: CMD9 returns error R1 — exercises line 140 */
+static void test_sd_read_sector_bad_token(void)
+{
+    SYN_SD sd;
+    sd.spi_bus = 0;
+    sd.cs_pin = (SYN_GPIO_Pin)0;
+    sd.type = SYN_SD_SDHC;
+    sd.sector_count = 16384;
+    sd.initialized = true;
+
+    /* CMD17 R1 = 0x00 (OK), but data token never arrives (all 0xFF) */
+    uint8_t rx[520];
+    rx[0] = 0x00u; /* R1 ready */
+    memset(&rx[1], 0xFF, sizeof(rx) - 1); /* no data token */
+    mock_spi_set_response(rx, sizeof(rx));
+    uint8_t buf[512];
+    TEST_ASSERT_EQUAL(SYN_ERROR, syn_sd_read(&sd, 0, buf));
+}
+/** Read: CMD17 returns error R1 — exercises lines 320-321 */
+static void test_sd_read_cmd17_fail(void)
+{
+    SYN_SD sd;
+    sd.spi_bus = 0;
+    sd.cs_pin = (SYN_GPIO_Pin)0;
+    sd.type = SYN_SD_SDHC;
+    sd.sector_count = 16384;
+    sd.initialized = true;
+
+    /* CMD17 R1 = 0x04 (error) */
+    uint8_t rx[] = { 0x04 };
+    mock_spi_set_response(rx, sizeof(rx));
+    uint8_t buf[512];
+    TEST_ASSERT_EQUAL(SYN_ERROR, syn_sd_read(&sd, 0, buf));
+}
+
+/** Write: CMD24 returns error R1 — exercises lines 362-363 */
+static void test_sd_write_cmd24_fail(void)
+{
+    SYN_SD sd;
+    sd.spi_bus = 0;
+    sd.cs_pin = (SYN_GPIO_Pin)0;
+    sd.type = SYN_SD_SDHC;
+    sd.sector_count = 16384;
+    sd.initialized = true;
+
+    /* CMD24 R1 = 0x04 (error) */
+    uint8_t rx[] = { 0x04 };
+    mock_spi_set_response(rx, sizeof(rx));
+    uint8_t buf[512];
+    memset(buf, 0xAA, sizeof(buf));
+    TEST_ASSERT_EQUAL(SYN_ERROR, syn_sd_write(&sd, 0, buf));
+}
+
+/** Write: data response rejected — exercises lines 379-380 */
+static void test_sd_write_data_rejected(void)
+{
+    SYN_SD sd;
+    sd.spi_bus = 0;
+    sd.cs_pin = (SYN_GPIO_Pin)0;
+    sd.type = SYN_SD_SDHC;
+    sd.sector_count = 16384;
+    sd.initialized = true;
+
+    /* CMD24 R1 = 0x00 (OK), then data response = 0x0B (rejected, not 0x05) */
+    uint8_t rx[520];
+    rx[0] = 0x00;  /* R1 ready */
+    /* After CMD24, card receives 512 data bytes + 2 CRC → then data response.
+     * Mock doesn't consume TX bytes, so data response is at rx[1] in our mock */
+    rx[1] = 0x0B;  /* data response: rejected (not 0x05) */
+    mock_spi_set_response(rx, 2);
+    uint8_t buf[512];
+    memset(buf, 0xAA, sizeof(buf));
+    TEST_ASSERT_EQUAL(SYN_ERROR, syn_sd_write(&sd, 0, buf));
+}
+
 /* ── Registration ────────────────────────────────────────────────────────── */
 
 void run_sd_tests(void)
@@ -236,4 +351,11 @@ void run_sd_tests(void)
     RUN_TEST(test_sd_read_sector);
     RUN_TEST(test_sd_write_sector);
     RUN_TEST(test_sd_sync);
+    RUN_TEST(test_sd_init_cmd0_fail);
+    RUN_TEST(test_sd_init_cmd8_voltage_mismatch);
+    RUN_TEST(test_sd_init_cmd55_error);
+    RUN_TEST(test_sd_read_sector_bad_token);
+    RUN_TEST(test_sd_read_cmd17_fail);
+    RUN_TEST(test_sd_write_cmd24_fail);
+    RUN_TEST(test_sd_write_data_rejected);
 }
