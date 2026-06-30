@@ -71,6 +71,11 @@ SYN_Status syn_fwupdate_begin(SYN_FwUpdate *upd,
     upd->crc_state     = SYN_CRC32_INIT;
     upd->active        = true;
 
+#if defined(SYN_FW_USE_HMAC) && SYN_FW_USE_HMAC
+    /* HMAC is initialized lazily in set_key(); key_set starts false
+     * because memset above zeroed the struct. */
+#endif
+
     /* Erase the first sector (contains the header) */
     SYN_Status st = syn_port_flash_erase(slot_addr);
     if (st != SYN_OK) {
@@ -110,6 +115,13 @@ SYN_Status syn_fwupdate_write(SYN_FwUpdate *upd,
     /* Update running CRC */
     upd->crc_state = syn_crc32_update(upd->crc_state, data, len);
 
+#if defined(SYN_FW_USE_HMAC) && SYN_FW_USE_HMAC
+    /* Update running HMAC if key was provided */
+    if (upd->key_set) {
+        syn_hmac_sha256_update(&upd->hmac_ctx, data, len);
+    }
+#endif
+
     /* Buffer data and flush full pages */
     size_t offset = 0;
     while (offset < len) {
@@ -136,6 +148,9 @@ SYN_Status syn_fwupdate_write(SYN_FwUpdate *upd,
 
 SYN_Status syn_fwupdate_finish(SYN_FwUpdate *upd,
                                 uint32_t expected_crc,
+#if defined(SYN_FW_USE_HMAC) && SYN_FW_USE_HMAC
+                                const uint8_t *expected_hmac,
+#endif
                                 uint32_t version_code)
 {
     SYN_ASSERT(upd != NULL);
@@ -151,11 +166,36 @@ SYN_Status syn_fwupdate_finish(SYN_FwUpdate *upd,
     /* Finalize CRC */
     uint32_t computed_crc = syn_crc32_final(upd->crc_state);
 
+#if defined(SYN_FW_USE_HMAC) && SYN_FW_USE_HMAC
+    /* Finalize HMAC before CRC check so the digest is available for
+     * both verification and storage in the header. */
+    uint8_t computed_hmac[32] = {0};
+    if (upd->key_set) {
+        syn_hmac_sha256_final(&upd->hmac_ctx, computed_hmac);
+    }
+#endif
+
     if (computed_crc != expected_crc) {
         /* CRC mismatch — mark slot invalid */
         syn_fwupdate_abort(upd);
         return SYN_ERROR;
     }
+
+#if defined(SYN_FW_USE_HMAC) && SYN_FW_USE_HMAC
+    /* Verify HMAC if caller provided an expected value */
+    if (expected_hmac != NULL && upd->key_set) {
+        /* Constant-time compare to prevent timing side channels */
+        uint8_t diff = 0;
+        size_t i;
+        for (i = 0; i < 32; i++) {
+            diff |= computed_hmac[i] ^ expected_hmac[i];
+        }
+        if (diff != 0) {
+            syn_fwupdate_abort(upd);
+            return SYN_ERROR;
+        }
+    }
+#endif
 
     /* Write the final header with state = NEW */
     SYN_FwImageHeader hdr;
@@ -165,14 +205,17 @@ SYN_Status syn_fwupdate_finish(SYN_FwUpdate *upd,
     hdr.image_size   = upd->bytes_written;
     hdr.image_crc    = computed_crc;
     hdr.state        = SYN_FW_STATE_NEW;
+
+#if defined(SYN_FW_USE_HMAC) && SYN_FW_USE_HMAC
+    /* Store HMAC in header if key was set */
+    if (upd->key_set) {
+        memcpy(hdr.image_hmac, computed_hmac, 32);
+    }
+#endif
+
     syn_fwimage_seal_header(&hdr);
 
     /* Erase first sector to rewrite header */
-    /* Note: this erases the header sector — image data may span more sectors.
-     * The header sector may also contain early image data, which is why we
-     * need to handle this carefully. For simplicity, we re-erase and rewrite
-     * just the header bytes. In a real system you'd reserve the header in
-     * its own small region or use a separate metadata sector. */
     st = syn_port_flash_erase(upd->slot_addr);
     if (st != SYN_OK) {
         upd->error = true;
@@ -205,3 +248,16 @@ void syn_fwupdate_abort(SYN_FwUpdate *upd)
 }
 
 #endif /* SYN_USE_BOOT */
+
+#if defined(SYN_FW_USE_HMAC) && SYN_FW_USE_HMAC
+
+void syn_fwupdate_set_key(SYN_FwUpdate *upd,
+                           const void *key, size_t key_len)
+{
+    SYN_ASSERT(upd != NULL);
+    SYN_ASSERT(key != NULL);
+    syn_hmac_sha256_init(&upd->hmac_ctx, key, key_len);
+    upd->key_set = true;
+}
+
+#endif /* SYN_FW_USE_HMAC */

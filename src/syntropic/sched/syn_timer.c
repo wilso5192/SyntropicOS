@@ -119,4 +119,36 @@ uint32_t syn_timer_remaining(const SYN_Timer *timer)
     return (diff > 0) ? (uint32_t)diff : 0;
 }
 
+uint32_t syn_timer_next_expiry(const SYN_Timer *timers, size_t count)
+{
+    SYN_ASSERT(timers != NULL || count == 0);
+
+    uint32_t now = syn_port_get_tick_ms();
+    uint32_t earliest = UINT32_MAX;
+    bool any_ready_now = false;
+
+    for (size_t i = 0; i < count; i++) {
+        if (!timers[i].active) continue;
+
+        /* Check if this timer has already expired */
+        if ((int32_t)(now - timers[i].target_tick) >= 0) {
+            any_ready_now = true;
+            continue;
+        }
+
+        /* Timer is in the future — track the earliest */
+        if ((int32_t)(timers[i].target_tick - earliest) < 0 ||
+            earliest == UINT32_MAX) {
+            earliest = timers[i].target_tick;
+        }
+    }
+
+    /* If any timer is ready right now, return 'now' */
+    if (any_ready_now) {
+        return now;
+    }
+
+    return earliest;
+}
+
 #endif /* SYN_USE_TIMER */

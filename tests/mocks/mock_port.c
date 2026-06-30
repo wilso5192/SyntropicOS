@@ -690,5 +690,172 @@ void mock_port_reset(void)
     memset(mock_uart_tx_buf, 0, sizeof(mock_uart_tx_buf));
     mock_uart_tx_len = 0;
     mock_uart_init_fail = false;
+
+#if defined(SYN_USE_DMA) && SYN_USE_DMA
+    memset(mock_dma, 0, sizeof(mock_dma));
+    mock_dma_start_count = 0;
+    mock_dma_stop_count = 0;
+#endif
+
+#if defined(SYN_USE_I2C_ASYNC) && SYN_USE_I2C_ASYNC
+    mock_i2c_async_count = 0;
+    mock_i2c_async_busy = false;
+    mock_i2c_async_result = SYN_OK;
+#endif
+
+#if defined(SYN_USE_SPI_ASYNC) && SYN_USE_SPI_ASYNC
+    mock_spi_async_count = 0;
+    mock_spi_async_busy = false;
+    mock_spi_async_result = SYN_OK;
+#endif
 }
+
+/* ── DMA mock implementation ───────────────────────────────────────────── */
+
+#if defined(SYN_USE_DMA) && SYN_USE_DMA
+
+MockDmaChannel mock_dma[MOCK_DMA_MAX_CHANNELS];
+int            mock_dma_start_count = 0;
+int            mock_dma_stop_count = 0;
+
+SYN_Status syn_port_dma_init(const SYN_DMA_Config *cfg)
+{
+    if (cfg == NULL || cfg->channel >= MOCK_DMA_MAX_CHANNELS) return SYN_ERROR;
+    mock_dma[cfg->channel].cfg = *cfg;
+    mock_dma[cfg->channel].initialized = true;
+    mock_dma[cfg->channel].busy = false;
+    mock_dma[cfg->channel].remaining = 0;
+    return SYN_OK;
+}
+
+SYN_Status syn_port_dma_start(uint8_t channel,
+                               const volatile void *src,
+                               volatile void *dst,
+                               size_t count)
+{
+    (void)src; (void)dst;
+    if (channel >= MOCK_DMA_MAX_CHANNELS) return SYN_ERROR;
+    if (!mock_dma[channel].initialized) return SYN_ERROR;
+    if (mock_dma[channel].busy) return SYN_BUSY;
+    mock_dma[channel].busy = true;
+    mock_dma[channel].remaining = count;
+    mock_dma_start_count++;
+    return SYN_OK;
+}
+
+SYN_Status syn_port_dma_stop(uint8_t channel)
+{
+    if (channel >= MOCK_DMA_MAX_CHANNELS) return SYN_ERROR;
+    mock_dma[channel].busy = false;
+    mock_dma[channel].remaining = 0;
+    mock_dma_stop_count++;
+    return SYN_OK;
+}
+
+bool syn_port_dma_busy(uint8_t channel)
+{
+    if (channel >= MOCK_DMA_MAX_CHANNELS) return false;
+    return mock_dma[channel].busy;
+}
+
+size_t syn_port_dma_remaining(uint8_t channel)
+{
+    if (channel >= MOCK_DMA_MAX_CHANNELS) return 0;
+    return mock_dma[channel].remaining;
+}
+
+void mock_dma_complete(uint8_t channel, SYN_Status result)
+{
+    if (channel >= MOCK_DMA_MAX_CHANNELS) return;
+    mock_dma[channel].busy = false;
+    mock_dma[channel].remaining = 0;
+    if (mock_dma[channel].cfg.callback != NULL) {
+        mock_dma[channel].cfg.callback(channel, result,
+                                        mock_dma[channel].cfg.user_data);
+    }
+}
+
+#endif /* SYN_USE_DMA */
+
+/* ── Async I2C mock implementation ─────────────────────────────────────── */
+
+#if defined(SYN_USE_I2C_ASYNC) && SYN_USE_I2C_ASYNC
+
+int  mock_i2c_async_count = 0;
+bool mock_i2c_async_busy = false;
+SYN_Status mock_i2c_async_result = SYN_OK;
+static const SYN_I2C_Xfer *mock_i2c_last_xfer = NULL;
+
+SYN_Status syn_port_i2c_xfer_async(const SYN_I2C_Xfer *xfer)
+{
+    if (xfer == NULL) return SYN_ERROR;
+    if (mock_i2c_async_busy) return SYN_BUSY;
+    mock_i2c_last_xfer = xfer;
+    mock_i2c_async_busy = true;
+    mock_i2c_async_count++;
+    return SYN_OK;
+}
+
+SYN_Status syn_port_i2c_cancel(uint8_t bus)
+{
+    (void)bus;
+    if (!mock_i2c_async_busy) return SYN_ERROR;
+    mock_i2c_async_busy = false;
+    mock_i2c_last_xfer = NULL;
+    return SYN_OK;
+}
+
+void mock_i2c_async_complete(void)
+{
+    if (mock_i2c_last_xfer == NULL) return;
+    const SYN_I2C_Xfer *xfer = mock_i2c_last_xfer;
+    mock_i2c_async_busy = false;
+    mock_i2c_last_xfer = NULL;
+    if (xfer->callback != NULL) {
+        xfer->callback(xfer->bus, mock_i2c_async_result, xfer->user_data);
+    }
+}
+
+#endif /* SYN_USE_I2C_ASYNC */
+
+/* ── Async SPI mock implementation ─────────────────────────────────────── */
+
+#if defined(SYN_USE_SPI_ASYNC) && SYN_USE_SPI_ASYNC
+
+int  mock_spi_async_count = 0;
+bool mock_spi_async_busy = false;
+SYN_Status mock_spi_async_result = SYN_OK;
+static const SYN_SPI_Xfer *mock_spi_last_xfer = NULL;
+
+SYN_Status syn_port_spi_xfer_async(const SYN_SPI_Xfer *xfer)
+{
+    if (xfer == NULL) return SYN_ERROR;
+    if (mock_spi_async_busy) return SYN_BUSY;
+    mock_spi_last_xfer = xfer;
+    mock_spi_async_busy = true;
+    mock_spi_async_count++;
+    return SYN_OK;
+}
+
+SYN_Status syn_port_spi_cancel(uint8_t bus)
+{
+    (void)bus;
+    if (!mock_spi_async_busy) return SYN_ERROR;
+    mock_spi_async_busy = false;
+    mock_spi_last_xfer = NULL;
+    return SYN_OK;
+}
+
+void mock_spi_async_complete(void)
+{
+    if (mock_spi_last_xfer == NULL) return;
+    const SYN_SPI_Xfer *xfer = mock_spi_last_xfer;
+    mock_spi_async_busy = false;
+    mock_spi_last_xfer = NULL;
+    if (xfer->callback != NULL) {
+        xfer->callback(xfer->bus, mock_spi_async_result, xfer->user_data);
+    }
+}
+
+#endif /* SYN_USE_SPI_ASYNC */
 

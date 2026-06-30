@@ -136,6 +136,19 @@
 #define SYN_COREDUMP_STACK_SIZE  128 /**< Bytes of stack to capture           */
 /* Version and Sleep are header-only — always available.                     */
 
+/* ── Firmware Security ─────────────────────────────────────────────────── */
+
+#define SYN_FW_USE_HMAC        0   /**< HMAC-signed firmware images (requires: SHA256, BOOT) */
+
+/* ── DMA ───────────────────────────────────────────────────────────────── */
+
+#define SYN_USE_DMA            0   /**< DMA port abstraction                */
+
+/* ── Async Peripherals ─────────────────────────────────────────────────── */
+
+#define SYN_USE_I2C_ASYNC      0   /**< Async I2C transactions              */
+#define SYN_USE_SPI_ASYNC      0   /**< Async SPI transactions              */
+
 /* ── Debug ──────────────────────────────────────────────────────────────── */
 
 #define SYN_USE_TRACE          1   /**< Event trace buffer                  */

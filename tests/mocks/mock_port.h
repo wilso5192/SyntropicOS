@@ -156,6 +156,61 @@ extern uint32_t mock_wdt_feed_count;    /**< Number of times syn_port_wdt_feed w
 extern uint16_t mock_dac_values[MOCK_DAC_MAX_CHANNELS]; /**< Last raw value written per channel */
 extern bool     mock_dac_init_ok;                       /**< Controls syn_port_dac_init result  */
 
+/* ── DMA ────────────────────────────────────────────────────────────────── */
+
+#include "syntropic/port/syn_port_dma.h"
+
+#if defined(SYN_USE_DMA) && SYN_USE_DMA
+
+/** @brief Mock DMA channel state (up to 4 channels). */
+typedef struct {
+    bool             initialized;
+    bool             busy;
+    size_t           remaining;
+    SYN_DMA_Config   cfg;
+} MockDmaChannel;
+
+#define MOCK_DMA_MAX_CHANNELS 4
+
+extern MockDmaChannel mock_dma[MOCK_DMA_MAX_CHANNELS];
+extern int            mock_dma_start_count;
+extern int            mock_dma_stop_count;
+
+/** Fire the DMA completion callback for a channel (simulates ISR). */
+void mock_dma_complete(uint8_t channel, SYN_Status result);
+
+#endif /* SYN_USE_DMA */
+
+/* ── Async I2C ──────────────────────────────────────────────────────────── */
+
+#include "syntropic/port/syn_port_i2c_async.h"
+
+#if defined(SYN_USE_I2C_ASYNC) && SYN_USE_I2C_ASYNC
+
+extern int  mock_i2c_async_count;
+extern bool mock_i2c_async_busy;
+extern SYN_Status mock_i2c_async_result;
+
+/** Simulate completion — fires the callback from the last xfer. */
+void mock_i2c_async_complete(void);
+
+#endif /* SYN_USE_I2C_ASYNC */
+
+/* ── Async SPI ──────────────────────────────────────────────────────────── */
+
+#include "syntropic/port/syn_port_spi_async.h"
+
+#if defined(SYN_USE_SPI_ASYNC) && SYN_USE_SPI_ASYNC
+
+extern int  mock_spi_async_count;
+extern bool mock_spi_async_busy;
+extern SYN_Status mock_spi_async_result;
+
+/** Simulate completion — fires the callback from the last xfer. */
+void mock_spi_async_complete(void);
+
+#endif /* SYN_USE_SPI_ASYNC */
+
 /* ── Reset ────────────────────────────────────────────────────────────────── */
 
 /** Reset all mock state to defaults. Call from setUp(). */

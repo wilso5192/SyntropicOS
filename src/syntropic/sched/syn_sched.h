@@ -28,6 +28,10 @@
 #include "../common/syn_compiler.h"
 #include <stdbool.h>
 
+#if defined(SYN_USE_TICKLESS) && SYN_USE_TICKLESS && \
+    defined(SYN_USE_TIMER) && SYN_USE_TIMER
+#include "syn_timer.h"
+#endif
 #if defined(SYN_USE_TICKLESS) && SYN_USE_TICKLESS
   #include "../system/syn_sleep.h"
 #endif
@@ -127,6 +131,25 @@ uint32_t syn_sched_next_wakeup(const SYN_Sched *sched);
  * @param sleep  Sleep coordinator (for wake-lock checking).
  */
 SYN_NORETURN void syn_sched_run_tickless(SYN_Sched *sched, SYN_Sleep *sleep);
+
+#if defined(SYN_USE_TIMER) && SYN_USE_TIMER
+/**
+ * @brief Run the scheduler with tickless idle + software timer awareness.
+ *
+ * Like syn_sched_run_tickless(), but also considers software timer
+ * deadlines via syn_timer_next_expiry(). The CPU sleeps only until the
+ * earlier of the next task deadline or the next timer expiry.
+ *
+ * @param sched        Scheduler to run.
+ * @param sleep        Sleep coordinator (for wake-lock checking).
+ * @param timers       Array of software timers.
+ * @param timer_count  Number of timers in the array.
+ */
+SYN_NORETURN void syn_sched_run_tickless_ex(SYN_Sched *sched,
+                                             SYN_Sleep *sleep,
+                                             SYN_Timer *timers,
+                                             size_t timer_count);
+#endif /* SYN_USE_TIMER */
 
 #endif /* SYN_USE_TICKLESS */
 

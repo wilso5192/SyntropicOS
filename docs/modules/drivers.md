@@ -45,3 +45,56 @@ Hardware abstraction drivers. Each is guarded by a `SYN_USE_*` config switch.
 |---|---|---|---|
 | 1-Wire | `drivers/syn_soft_onewire.h` | `SYN_USE_ONEWIRE` | Bit-bang 1-Wire master: reset, byte read/write, ROM search. Suitable for DS18B20 temperature sensors. |
 | Hardware WDT | `system/syn_hwwdt.h` | `SYN_USE_HWWDT` | Hardware watchdog timer: init and feed. Complements the software task-level watchdog in `syn_watchdog`. |
+
+## DMA
+
+| Module | Header | Config | Description |
+|---|---|---|---|
+| DMA Port | `port/syn_port_dma.h` | `SYN_USE_DMA` | Portable DMA channel abstraction with completion callbacks |
+
+Provides `init`, `start`, `stop`, `busy`, and `remaining` operations. The completion callback fires from ISR context — use `syn_workqueue_post()` to defer heavy processing to the main context.
+
+```c
+static void on_dma_done(uint8_t ch, SYN_Status result, void *ctx) {
+    syn_workqueue_post(&wq, process_adc_data, ctx);
+}
+
+SYN_DMA_Config cfg = {
+    .channel   = 0,
+    .direction = SYN_DMA_PERIPH_TO_MEM,
+    .width     = SYN_DMA_WIDTH_16,
+    .src_incr  = false,   // Peripheral register (fixed)
+    .dst_incr  = true,    // Memory buffer (incrementing)
+    .callback  = on_dma_done,
+    .user_data = &adc_buf,
+};
+syn_port_dma_init(&cfg);
+syn_port_dma_start(0, &ADC_DR, adc_buf, 256);
+```
+
+## Async I2C / SPI
+
+| Module | Header | Config | Description |
+|---|---|---|---|
+| Async I2C | `port/syn_port_i2c_async.h` | `SYN_USE_I2C_ASYNC` | Non-blocking I2C transactions with completion callback |
+| Async SPI | `port/syn_port_spi_async.h` | `SYN_USE_SPI_ASYNC` | Non-blocking SPI transfers with completion callback |
+
+Callback-based async alternatives to the existing blocking port APIs. The blocking `syn_port_i2c_*` and `syn_port_spi_*` functions remain unchanged — async is a separate opt-in.
+
+```c
+static void on_i2c_done(uint8_t bus, SYN_Status result, void *ctx) {
+    // Data is ready in rx_data
+}
+
+uint8_t reg = 0xD0;
+uint8_t chip_id;
+SYN_I2C_Xfer xfer = {
+    .bus = 0, .addr = 0x76,
+    .tx_data = &reg, .tx_len = 1,
+    .rx_data = &chip_id, .rx_len = 1,
+    .callback = on_i2c_done,
+};
+syn_port_i2c_xfer_async(&xfer);
+```
+
+The transfer descriptor must remain valid until the callback fires. Callbacks fire from ISR context — use the workqueue for non-trivial processing.

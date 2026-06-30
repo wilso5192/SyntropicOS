@@ -317,4 +317,45 @@ Implement `syn_port_sleep_until(uint32_t wake_tick_ms)` in your platform port. T
 
 The default weak stub falls back to `syn_port_sleep(SYN_SLEEP_LIGHT)` (no timer programming — just WFI).
 
+### Timer-Aware Tickless (`run_tickless_ex`)
 
+When using software timers alongside tickless idle, the basic `syn_sched_run_tickless()` only considers task `delay_until` deadlines. Software timer expirations won't wake the CPU — they'll fire late, after the next task wakes up.
+
+`syn_sched_run_tickless_ex()` solves this by combining both:
+
+```
+                       syn_sched_run_tickless_ex()
+┌────────────────────────────────────────────────────────────┐
+│  1. Run scheduler (syn_sched_run)                          │
+│  2. Service software timers (syn_timer_service)            │
+│  3. sleep_until = min(next_task_wakeup, next_timer_expiry) │
+│  4. Enter low-power sleep until sleep_until                │
+│  5. goto 1                                                 │
+└────────────────────────────────────────────────────────────┘
+```
+
+Requires both `SYN_USE_TICKLESS` and `SYN_USE_TIMER` to be enabled.
+
+```c
+// syn_config.h
+#define SYN_USE_TICKLESS 1
+#define SYN_USE_TIMER    1
+```
+
+```c
+static SYN_Timer timers[2];
+syn_timer_init(&timers[0], 100, true, sensor_poll_cb, NULL);
+syn_timer_init(&timers[1], 5000, true, heartbeat_cb, NULL);
+syn_timer_start(&timers[0]);
+syn_timer_start(&timers[1]);
+
+// CPU wakes for both task delays AND timer expirations
+syn_sched_run_tickless_ex(&sched, &sleep, timers, 2);
+```
+
+`syn_timer_next_expiry()` is also available standalone if you need to query the earliest timer deadline:
+
+```c
+uint32_t next = syn_timer_next_expiry(timers, timer_count);
+// UINT32_MAX if no active timers
+```

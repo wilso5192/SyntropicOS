@@ -34,6 +34,10 @@
 #include "../common/syn_defs.h"
 #include "syn_fwimage.h"
 
+#if defined(SYN_FW_USE_HMAC) && SYN_FW_USE_HMAC
+#include "../util/syn_hmac.h"
+#endif
+
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
@@ -58,6 +62,11 @@ typedef struct {
 
     bool      active;           /**< Update in progress?                   */
     bool      error;            /**< Error occurred?                       */
+
+#if defined(SYN_FW_USE_HMAC) && SYN_FW_USE_HMAC
+    SYN_HMAC_SHA256 hmac_ctx;   /**< Running HMAC-SHA256 context           */
+    bool      key_set;          /**< HMAC key was provided?                */
+#endif
 } SYN_FwUpdate;
 
 /* ── API ────────────────────────────────────────────────────────────────── */
@@ -99,15 +108,22 @@ SYN_Status syn_fwupdate_write(SYN_FwUpdate *upd,
  *
  * Flushes any remaining buffered data, verifies the CRC-32 matches
  * the expected value, and writes the image header with state = NEW.
+ * When SYN_FW_USE_HMAC is enabled, also verifies the HMAC-SHA256 if
+ * expected_hmac is non-NULL (pass NULL to skip HMAC and use CRC only).
  *
- * @param upd           Updater instance.
- * @param expected_crc  Expected CRC-32 of the full image.
- * @param version_code  Version code for the new image.
- * @return SYN_OK if CRC matches and header written,
- *         SYN_ERROR on CRC mismatch or flash failure.
+ * @param upd            Updater instance.
+ * @param expected_crc   Expected CRC-32 of the full image.
+ * @param expected_hmac  Expected HMAC-SHA256 (32 bytes), or NULL for
+ *                       CRC-only verification (SYN_FW_USE_HMAC only).
+ * @param version_code   Version code for the new image.
+ * @return SYN_OK if verification passes and header written,
+ *         SYN_ERROR on mismatch or flash failure.
  */
 SYN_Status syn_fwupdate_finish(SYN_FwUpdate *upd,
                                 uint32_t expected_crc,
+#if defined(SYN_FW_USE_HMAC) && SYN_FW_USE_HMAC
+                                const uint8_t *expected_hmac,
+#endif
                                 uint32_t version_code);
 
 /**
@@ -138,6 +154,22 @@ static inline bool syn_fwupdate_active(const SYN_FwUpdate *upd)
 {
     return upd->active;
 }
+
+#if defined(SYN_FW_USE_HMAC) && SYN_FW_USE_HMAC
+/**
+ * @brief Set the HMAC signing key for the current update.
+ *
+ * Must be called after syn_fwupdate_begin() and before the first
+ * syn_fwupdate_write(). When set, the updater computes a running
+ * HMAC-SHA256 alongside the CRC-32.
+ *
+ * @param upd      Updater instance.
+ * @param key      HMAC key.
+ * @param key_len  Key length in bytes.
+ */
+void syn_fwupdate_set_key(SYN_FwUpdate *upd,
+                           const void *key, size_t key_len);
+#endif
 
 #ifdef __cplusplus
 }

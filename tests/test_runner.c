@@ -104,6 +104,11 @@ void run_sha256_tests(void);
 void run_pool_tests(void);
 void run_coredump_tests(void);
 void run_tickless_tests(void);
+void run_dma_tests(void);
+void run_i2c_async_tests(void);
+void run_spi_async_tests(void);
+void run_fwupdate_hmac_tests(void);
+void run_timer_expiry_tests(void);
 
 /* ── Main ───────────────────────────────────────────────────────────────── */
 
@@ -222,6 +227,13 @@ int main(void)
     run_pool_tests();
     run_coredump_tests();
     run_tickless_tests();
+
+    /* New features: DMA, Async I2C/SPI, HMAC FW, Timer Expiry */
+    run_dma_tests();
+    run_i2c_async_tests();
+    run_spi_async_tests();
+    run_fwupdate_hmac_tests();
+    run_timer_expiry_tests();
 
     return UNITY_END();
 }

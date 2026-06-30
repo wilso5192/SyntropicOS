@@ -122,7 +122,7 @@ void test_fwupdate_basic(void)
 
     TEST_ASSERT_EQUAL(128, syn_fwupdate_progress(&upd) + upd.page_buf_used);
 
-    st = syn_fwupdate_finish(&upd, expected_crc, 0x00010200);
+    st = syn_fwupdate_finish(&upd, expected_crc, NULL, 0x00010200);
     TEST_ASSERT_EQUAL(SYN_OK, st);
     TEST_ASSERT_FALSE(syn_fwupdate_active(&upd));
 
@@ -151,7 +151,7 @@ void test_fwupdate_crc_mismatch(void)
     syn_fwupdate_write(&upd, firmware, sizeof(firmware));
 
     /* Provide wrong CRC */
-    SYN_Status st = syn_fwupdate_finish(&upd, 0xBADBAD00, 0x00010000);
+    SYN_Status st = syn_fwupdate_finish(&upd, 0xBADBAD00, NULL, 0x00010000);
     TEST_ASSERT_EQUAL(SYN_ERROR, st);
 
     /* Slot should be marked INVALID */
@@ -357,7 +357,7 @@ static void test_fwupdate_finish_flush_fail(void)
     /* Fail the flush write that happens inside finish() */
     mock_flash_write_fail_next = true;
     uint32_t crc = syn_crc32_final(syn_crc32_update(SYN_CRC32_INIT, data, sizeof(data)));
-    st = syn_fwupdate_finish(&upd, crc, 1);
+    st = syn_fwupdate_finish(&upd, crc, NULL, 1);
     TEST_ASSERT_EQUAL(SYN_ERROR, st);
     TEST_ASSERT_TRUE(upd.error);
 }
@@ -380,7 +380,7 @@ static void test_fwupdate_finish_erase_fail(void)
 
     /* Fail the erase that happens at the start of finish() header-rewrite */
     mock_flash_fail_at = SLOT_A_ADDR;
-    st = syn_fwupdate_finish(&upd, crc, 1);
+    st = syn_fwupdate_finish(&upd, crc, NULL, 1);
     TEST_ASSERT_EQUAL(SYN_ERROR, st);
     TEST_ASSERT_TRUE(upd.error);
 }

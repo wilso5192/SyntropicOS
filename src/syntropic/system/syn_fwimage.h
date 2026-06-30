@@ -52,7 +52,12 @@ typedef enum {
 
 /* ── Image header ───────────────────────────────────────────────────────── */
 
-/** @brief Firmware image header — stored at the start of each flash slot (24 bytes). */
+/**
+ * @brief Firmware image header — stored at the start of each flash slot.
+ *
+ * Base size: 24 bytes. When SYN_FW_USE_HMAC is enabled, adds a 32-byte
+ * HMAC field for a total of 56 bytes.
+ */
 typedef struct {
     uint32_t  magic;            /**< SYN_FW_MAGIC                          */
     uint32_t  version_code;     /**< Packed version (SYN_VERSION_CODE fmt) */
@@ -60,8 +65,11 @@ typedef struct {
     uint32_t  image_crc;        /**< CRC-32 over the firmware binary       */
     uint8_t   state;            /**< SYN_FwState                           */
     uint8_t   reserved[3];      /**< Pad to 4-byte alignment               */
-    uint32_t  header_crc;       /**< CRC-32 over bytes 0..19 of header     */
-} SYN_FwImageHeader;            /* 24 bytes total */
+#if defined(SYN_FW_USE_HMAC) && SYN_FW_USE_HMAC
+    uint8_t   image_hmac[32];   /**< HMAC-SHA256 over the firmware binary  */
+#endif
+    uint32_t  header_crc;       /**< CRC-32 over all preceding fields      */
+} SYN_FwImageHeader;
 
 /* ── Validation ─────────────────────────────────────────────────────────── */
 

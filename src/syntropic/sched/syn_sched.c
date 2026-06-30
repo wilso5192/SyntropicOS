@@ -204,6 +204,50 @@ SYN_NORETURN void syn_sched_run_tickless(SYN_Sched *sched, SYN_Sleep *sleep)
     }
 }
 
+#if defined(SYN_USE_TIMER) && SYN_USE_TIMER
+
+SYN_NORETURN void syn_sched_run_tickless_ex(SYN_Sched *sched,
+                                             SYN_Sleep *sleep,
+                                             SYN_Timer *timers,
+                                             size_t timer_count)
+{
+    SYN_ASSERT(sched != NULL);
+    SYN_ASSERT(sleep != NULL);
+
+    for (;;) {
+        /* Run the scheduler */
+        syn_sched_run(sched);
+
+        /* Service software timers */
+        syn_timer_service(timers, timer_count);
+
+        /* Compute sleep duration: min of task deadlines and timer expiries */
+        uint32_t now = syn_port_get_tick_ms();
+        uint32_t task_wake  = syn_sched_next_wakeup(sched);
+        uint32_t timer_wake = syn_timer_next_expiry(timers, timer_count);
+
+        /* Pick the earlier deadline */
+        uint32_t wake = task_wake;
+        if (timer_wake != UINT32_MAX &&
+            (wake == UINT32_MAX || (int32_t)(timer_wake - wake) < 0)) {
+            wake = timer_wake;
+        }
+
+        /* Only sleep if nothing is immediately ready */
+        if (wake != now && !syn_sleep_any_locked(sleep)) {
+            if (wake == UINT32_MAX) {
+                /* No deadlines — light sleep until interrupt */
+                syn_sleep_enter(sleep);
+            } else {
+                /* Sleep until the next deadline */
+                syn_port_sleep_until(wake);
+            }
+        }
+    }
+}
+
+#endif /* SYN_USE_TIMER */
+
 #endif /* SYN_USE_TICKLESS */
 
 /* ── Task control ───────────────────────────────────────────────────────── */
