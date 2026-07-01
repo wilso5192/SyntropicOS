@@ -48,11 +48,16 @@ int32_t syn_pid_update(SYN_PID *pid, int32_t setpoint,
 
     /* ── Integral (with anti-windup) ───────────────────────────────────── */
     pid->integral += error * (int32_t)dt_ms;
-    pid->integral = SYN_CLAMP(pid->integral,
-                          -pid->cfg.integral_max,
-                           pid->cfg.integral_max);
+    if (pid->cfg.integral_max > 0) {
+        pid->integral = SYN_CLAMP(pid->integral,
+                              -pid->cfg.integral_max,
+                               pid->cfg.integral_max);
+    }
 
-    int32_t i_term = (pid->cfg.ki * pid->integral) / (pid->cfg.scale * 1000);
+    /* Two-step division to avoid integer truncation.
+     * Old: (ki * integral) / (scale * 1000) — denominator too large.
+     * New: divide by 1000 first (time normalization), then by scale.   */
+    int32_t i_term = ((pid->cfg.ki * pid->integral) / 1000) / pid->cfg.scale;
 
     /* ── Derivative ────────────────────────────────────────────────────── */
     int32_t d_raw;
