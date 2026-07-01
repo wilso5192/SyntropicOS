@@ -23,7 +23,11 @@
 
 #include "syn_motor_ctrl.h"
 #include "../util/syn_assert.h"
-#include "../system/syn_errlog.h"
+
+/* Only include optional module headers when enabled */
+#if !defined(SYN_USE_ERRLOG) || SYN_USE_ERRLOG
+  #include "../system/syn_errlog.h"
+#endif
 
 #include <string.h>
 
@@ -59,9 +63,13 @@ static void apply_output_dc(SYN_MotorCtrl *ctrl, int32_t output)
  */
 static void apply_output_stepper(SYN_MotorCtrl *ctrl, int32_t output)
 {
+#if !defined(SYN_USE_STEPPER) || SYN_USE_STEPPER
     if (ctrl->cfg.stepper == NULL) return;
     (void)output;
     syn_stepper_tick(ctrl->cfg.stepper);
+#else
+    (void)ctrl; (void)output;
+#endif
 }
 
 /**
@@ -72,9 +80,12 @@ static void stop_motor(SYN_MotorCtrl *ctrl)
 {
     if (ctrl->cfg.type == SYN_MCTRL_DC && ctrl->cfg.dc_motor != NULL) {
         syn_dc_motor_coast(ctrl->cfg.dc_motor);
-    } else if (ctrl->cfg.type == SYN_MCTRL_STEPPER && ctrl->cfg.stepper != NULL) {
+    }
+#if !defined(SYN_USE_STEPPER) || SYN_USE_STEPPER
+    else if (ctrl->cfg.type == SYN_MCTRL_STEPPER && ctrl->cfg.stepper != NULL) {
         syn_stepper_stop(ctrl->cfg.stepper);
     }
+#endif
 }
 
 /**
@@ -85,9 +96,12 @@ static void brake_motor(SYN_MotorCtrl *ctrl)
 {
     if (ctrl->cfg.type == SYN_MCTRL_DC && ctrl->cfg.dc_motor != NULL) {
         syn_dc_motor_brake(ctrl->cfg.dc_motor);
-    } else if (ctrl->cfg.type == SYN_MCTRL_STEPPER && ctrl->cfg.stepper != NULL) {
+    }
+#if !defined(SYN_USE_STEPPER) || SYN_USE_STEPPER
+    else if (ctrl->cfg.type == SYN_MCTRL_STEPPER && ctrl->cfg.stepper != NULL) {
         syn_stepper_stop(ctrl->cfg.stepper);
     }
+#endif
 }
 
 /**
@@ -149,7 +163,14 @@ SYN_Status syn_motor_ctrl_init(SYN_MotorCtrl *ctrl,
         .scale      = (int32_t)1 << cfg->pid_scale,
         .out_min    = cfg->output_min,
         .out_max    = cfg->output_max,
-        .integral_max = cfg->output_max * 4,
+        /* integral accumulates error*dt_ms (units: counts·ms).
+         * I-term = (ki * integral) / (scale * 1000).
+         * For max I-term = output_max:
+         *   integral_max = output_max * scale * 1000 / ki
+         * Use a generous cap to allow full I authority.           */
+        .integral_max = (cfg->pid_ki > 0)
+            ? (cfg->output_max * ((int32_t)1 << cfg->pid_scale) * 1000) / cfg->pid_ki
+            : 0,
         .d_filter_alpha = 200,
     };
     syn_pid_init(&ctrl->pid, &pid_cfg);
@@ -370,10 +391,12 @@ SYN_MotorCtrl_State syn_motor_ctrl_update(SYN_MotorCtrl *ctrl)
         ctrl->total_output = 0;
         stop_motor(ctrl);
         syn_pid_reset(&ctrl->pid);
+#if !defined(SYN_USE_ERRLOG) || SYN_USE_ERRLOG
         if (ctrl->cfg.errlog != NULL) {
             syn_errlog_record(ctrl->cfg.errlog, SYN_MCTRL_ERR_LIMIT,
                                SYN_ERR_WARNING, (uint32_t)current_pos);
         }
+#endif
         return ctrl->state;
     }
 
@@ -389,6 +412,7 @@ SYN_MotorCtrl_State syn_motor_ctrl_update(SYN_MotorCtrl *ctrl)
     }
 
     /* ── Tuning capture ─────────────────────────────────────────── */
+#if !defined(SYN_USE_DATALOG) || SYN_USE_DATALOG
     if (ctrl->datalog != NULL) {
         SYN_MotorCtrl_Sample sample = {
             .tick_ms      = now,
@@ -405,6 +429,7 @@ SYN_MotorCtrl_State syn_motor_ctrl_update(SYN_MotorCtrl *ctrl)
         syn_datalog_write(ctrl->datalog, SYN_MCTRL_DATALOG_ID,
                            &sample, sizeof(sample));
     }
+#endif
 
     /* ── Accumulate move metrics ────────────────────────────────── */
     {
@@ -458,10 +483,12 @@ SYN_MotorCtrl_State syn_motor_ctrl_update(SYN_MotorCtrl *ctrl)
                 stop_motor(ctrl);
                 syn_pid_reset(&ctrl->pid);
 
+#if !defined(SYN_USE_ERRLOG) || SYN_USE_ERRLOG
                 if (ctrl->cfg.errlog != NULL) {
                     syn_errlog_record(ctrl->cfg.errlog, SYN_MCTRL_ERR_STALL,
                                        SYN_ERR_ERROR, (uint32_t)current_pos);
                 }
+#endif
 
                 if (ctrl->on_stall != NULL) {
                     ctrl->on_stall(ctrl, ctrl->on_stall_ctx);
