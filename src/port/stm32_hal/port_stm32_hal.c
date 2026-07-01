@@ -7,10 +7,10 @@
  */
 
 #if !defined(ARDUINO) && ( \
-    defined(STM32F1xx) || defined(STM32F4xx) || defined(STM32L4xx) || \
-    defined(STM32G0xx) || defined(STM32H7xx) || defined(STM32F1)   || \
-    defined(STM32F4)   || defined(STM32L4)   || defined(STM32G0)   || \
-    defined(STM32H7) )
+    defined(STM32F0xx) || defined(STM32F1xx) || defined(STM32F4xx) || \
+    defined(STM32L4xx) || defined(STM32G0xx) || defined(STM32H7xx) || \
+    defined(STM32F0)   || defined(STM32F1)   || defined(STM32F4)   || \
+    defined(STM32L4)   || defined(STM32G0)   || defined(STM32H7) )
 
 #include "syntropic/common/syn_defs.h"
 #include "syntropic/port/syn_port_system.h"
@@ -19,7 +19,9 @@
 
 /* ── STM32 HAL Headers ─────────────────────────────────────────────────── */
 /* Adjust the include based on your target microcontroller family. */
-#if defined(STM32F407xx) || defined(STM32F4) || defined(STM32F4xx)
+#if defined(STM32F072xx) || defined(STM32F0) || defined(STM32F0xx)
+  #include "stm32f0xx_hal.h"
+#elif defined(STM32F407xx) || defined(STM32F4) || defined(STM32F4xx)
   #include "stm32f4xx_hal.h"
 #elif defined(STM32F103xx) || defined(STM32F1) || defined(STM32F1xx)
   #include "stm32f1xx_hal.h"
