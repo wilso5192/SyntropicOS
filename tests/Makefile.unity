@@ -24,7 +24,7 @@ SYN_SRCS := \
 	src/syntropic/input/syn_button.c src/syntropic/input/syn_encoder.c \
 	src/syntropic/output/syn_led.c src/syntropic/output/syn_soft_pwm.c \
 	src/syntropic/dsp/syn_filter.c src/syntropic/dsp/syn_signal.c \
-	src/syntropic/control/syn_pid.c \
+	src/syntropic/control/syn_pid.c src/syntropic/control/syn_autotune.c \
 	src/syntropic/motor/syn_stepper.c src/syntropic/motor/syn_servo.c \
 	src/syntropic/motor/syn_dc_motor.c src/syntropic/motor/syn_motor_ctrl.c \
 	src/syntropic/motor/syn_actuator.c \
@@ -81,7 +81,5 @@ clean:
 coverage:
 	find . \( -name "*.gcda" -o -name "*.gcno" \) -delete
 	$(MAKE) -f tests/Makefile.unity test CFLAGS="$(CFLAGS) --coverage -O0" TARGET="test_unity_cov"
-	lcov --capture --directory . --output-file coverage.info --rc lcov_branch_coverage=1
-	lcov --extract coverage.info "*/src/syntropic/*" --output-file coverage_src.info --rc lcov_branch_coverage=1
-	genhtml coverage_src.info --output-directory coverage_html --rc lcov_branch_coverage=1
+	gcov -n -o test_unity_cov-syn_autotune src/syntropic/control/syn_autotune.c
 

@@ -98,6 +98,8 @@ void run_coap_tests(void);
 void run_biquad_tests(void);
 void run_fft_tests(void);
 void run_fault_tests(void);
+void run_autotune_tests(void);
+
 void run_gpio_tests(void);
 void run_uart_tests(void);
 void run_sha256_tests(void);
@@ -219,6 +221,8 @@ int main(void)
     run_biquad_tests();
     run_fft_tests();
     run_fault_tests();
+    run_autotune_tests();
+
 
     /* OTA / Firmware Update */
     run_fwupdate_tests();

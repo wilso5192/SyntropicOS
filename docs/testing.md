@@ -35,6 +35,24 @@ make -f port/stm32f4/Makefile.renode renode-multinode-test
 !!! tip
     Both Renode test targets run with `--show-log` by default, streaming full UART debug messages and emulator events to the console in real time. If a test fails, you'll immediately see exactly what each simulated node output before the error. To override flags: `make -f port/stm32f4/Makefile.renode renode-test RENODE_FLAGS=""`.
 
+## Tier 3: Control Simulation (Plant Harness)
+
+For verifying motor control and autotune logic, SyntropicOS includes a high-fidelity **physics simulation harness**. This simulator models mass, friction (static, coulomb, viscous), back-EMF, and encoder noise.
+
+It is used to verify that the `syn_autotune` module can successfully identify and control diverse plant configurations (from 300lb carts to small linear actuators) at **1kHz**.
+
+```bash
+# Run the control simulation harness
+gcc -O2 -Isrc -o sim_harness tests/sim/sim_harness.c tests/sim/sim_plant.c \
+    src/syntropic/motor/syn_motor_ctrl.c \
+    src/syntropic/control/syn_autotune.c \
+    src/syntropic/control/syn_pid.c \
+    -lm
+./sim_harness
+```
+
+The harness tests the entire pipeline: **Automated Tuning** $\to$ **Profile Generation** $\to$ **Trajectory Tracking**.
+
 ## Visual Validation & Simulation (GUI)
 
 SyntropicOS provides host-compiled tools to validate canvas drawing and IMGUI layouts without hardware.

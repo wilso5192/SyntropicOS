@@ -12,94 +12,57 @@
  * Two layers of API:
  *
  * 1. **syn_autotune_start()** (recommended) — one-call auto-tune.
- *    Runs FF identification → braking → relay PID tuning → braking
+ *    Runs PROBE → FF identification → braking → relay PID tuning → braking
  *    automatically. The user only provides track limits.
- *    @note Not yet implemented — use the manual API below.
  *
  * 2. **syn_autotune_init()** (advanced) — manual mode selection.
  *    The caller configures and runs each phase (FF ident, relay) separately.
  *
  * Both are non-blocking — call syn_autotune_update() from your main loop.
  *
- * @par Real-World Usage (recommended API — future)
+ * @par Real-World Usage (recommended API)
  *
  * **Step 1: Home the encoder.**
  * Zero the encoder at one end of the track. The auto-tuner does NOT
  * require zeroing in the middle — it works with any zero convention.
- * @code
- *   EncoderIn.Position(0);   // or equivalent
- * @endcode
  *
  * **Step 2: Configure the motor controller.**
  * Set position_min/max to your safe operating range (in encoder counts).
  * These are the soft limits the auto-tuner will respect.
  * @code
- *   SYN_MotorCtrl_Config cfg = {
- *       .motor         = syn_dc_motor_output(&motor),
- *       .read_pos      = encoder_read,
- *       .update_hz     = 1000,
- *       .output_min    = -1000,
- *       .output_max    = 1000,
- *       .position_min  = 5000,     // 0.5m from home end (10000 cts/m)
- *       .position_max  = 495000,   // 0.5m from far end
- *   };
+ *   SYN_MotorCtrl_Config cfg = SYN_MOTOR_CTRL_DEFAULTS(
+ *       syn_dc_motor_output(&motor), encoder_read, NULL, 1000, 1000
+ *   );
+ *   cfg.position_min  = 5000;     // 0.5m from home end (10000 cts/m)
+ *   cfg.position_max  = 495000;   // 0.5m from far end
  *   syn_motor_ctrl_init(&ctrl, &cfg);
  * @endcode
  *
- * **Step 3: Jog the mover to somewhere with room.**
- * The auto-tuner needs space to move in both directions. Anywhere more
- * than ~2m from either end is fine. Mid-track is ideal.
- *
- * **Step 4: Start auto-tune.**
+ * **Step 3: Start auto-tune.**
  * @code
  *   SYN_AutoTune at;
  *   SYN_AutoTune_Limits limits = {
  *       .position_min = 5000,
  *       .position_max = 495000,
+ *       .watchdog_ms  = 1000,    // abort if update() stops for 1s
  *   };
- *   syn_autotune_start(&at, &ctrl, &limits);
+ *   syn_autotune_start(&at, &ctrl, &limits, SYN_ATUNE_FLAG_ALL);
  * @endcode
  *
- * **Step 5: Poll from your main loop.**
+ * **Step 4: Poll from your main loop.**
  * @code
- *   SYN_AutoTune_State st = syn_autotune_update(&at);
- *   if (st == SYN_ATUNE_DONE) {
- *       // Gains are applied to the controller. Save to flash if desired.
+ *   while (true) {
+ *       SYN_AutoTune_State st = syn_autotune_update(&at);
+ *       if (st == SYN_ATUNE_DONE) {
+ *           syn_autotune_apply(&at); // Copy gains to controller
+ *           break;
+ *       }
+ *       if (st == SYN_ATUNE_ABORTED) {
+ *           // Error handling...
+ *           break;
+ *       }
+ *       syn_port_sleep_ms(1); // or run from 1kHz interrupt
  *   }
- *   if (st == SYN_ATUNE_ABORTED) {
- *       // Check syn_autotune_abort_reason(&at) for what went wrong.
- *   }
- * @endcode
- *
- * **Step 6: Resume normal operation.**
- * The mover is stopped with tuned gains applied. The controller is in
- * IDLE mode — set your next target with set_position/set_velocity.
- *
- * @par Manual API Usage (available now)
- * @code
- *   // Phase 1: FF identification
- *   SYN_AutoTune at;
- *   SYN_AutoTune_Config cfg = {
- *       .mode             = SYN_ATUNE_MODE_FF_IDENT,
- *       .test_output      = 30,
- *       .position_limit   = 200000,
- *       .watchdog_ms      = 500,
- *   };
- *   syn_autotune_init(&at, &ctrl, &cfg);
- *   // poll update() until DONE, then brake to stop
- *
- *   // Phase 2: Relay PID tuning
- *   cfg = (SYN_AutoTune_Config){
- *       .mode             = SYN_ATUNE_MODE_RELAY,
- *       .test_output      = 25,
- *       .setpoint         = ctrl.measured_position,
- *       .method           = SYN_ATUNE_TYREUS_LUYBEN,
- *       .position_limit   = 50000,
- *       .watchdog_ms      = 500,
- *   };
- *   syn_autotune_init(&at, &ctrl, &cfg);
- *   // poll update() until DONE
- *   syn_autotune_apply(&at);
  * @endcode
  * @ingroup syn_motor
  */
@@ -123,6 +86,7 @@ extern "C" {
 typedef enum {
     SYN_ATUNE_MODE_FF_IDENT = 0,   /**< Feedforward identification only   */
     SYN_ATUNE_MODE_RELAY    = 1,   /**< Relay feedback PID tuning         */
+    SYN_ATUNE_MODE_AUTO     = 2,   /**< Automatic sequence: FF + Relay    */
 } SYN_AutoTune_Mode;
 
 /* ── PID formula ───────────────────────────────────────────────────────── */
@@ -138,15 +102,32 @@ typedef enum {
 
 /** @brief Auto-tuner state machine states. */
 typedef enum {
-    SYN_ATUNE_IDLE     = 0,   /**< Not started or finished               */
-    SYN_ATUNE_RAMP_UP  = 1,   /**< Ramping output to test level           */
-    SYN_ATUNE_SETTLING = 2,   /**< FF ident: waiting for steady-state     */
-    SYN_ATUNE_MEASURING = 3,  /**< FF ident: measuring velocity           */
-    SYN_ATUNE_RELAY    = 4,   /**< Relay: oscillation in progress         */
-    SYN_ATUNE_RAMP_DOWN = 5,  /**< Ramping output back to zero            */
-    SYN_ATUNE_DONE     = 6,   /**< Tuning complete, results available     */
-    SYN_ATUNE_ABORTED  = 7,   /**< Safety limit hit or user abort         */
+    SYN_ATUNE_IDLE,
+    SYN_ATUNE_PROBE,
+    SYN_ATUNE_RAMP_UP,
+    SYN_ATUNE_SETTLING,
+    SYN_ATUNE_MEASURING,
+    SYN_ATUNE_SETTLING_2,
+    SYN_ATUNE_MEASURING_2,
+    SYN_ATUNE_RELAY,
+    SYN_ATUNE_BRAKING,
+    SYN_ATUNE_RAMP_DOWN,
+    SYN_ATUNE_DONE,
+    SYN_ATUNE_ABORTED
 } SYN_AutoTune_State;
+
+/** @brief Auto-tuner feature flags. */
+typedef enum {
+    SYN_ATUNE_FLAG_NONE     = 0,
+    SYN_ATUNE_FLAG_IDENT_KV = (1 << 0), /**< Identify velocity feedforward (ff_kv) */
+    SYN_ATUNE_FLAG_IDENT_KA = (1 << 1), /**< Identify inertia feedforward (ff_ka) */
+    SYN_ATUNE_FLAG_TUNE_PID = (1 << 2), /**< Identify PID gains (Kp, Ki, Kd)      */
+    
+    /** Default: Identify everything */
+    SYN_ATUNE_FLAG_ALL = (SYN_ATUNE_FLAG_IDENT_KV | 
+                          SYN_ATUNE_FLAG_IDENT_KA | 
+                          SYN_ATUNE_FLAG_TUNE_PID)
+} SYN_AutoTune_Flags;
 
 /* ── Abort reason ──────────────────────────────────────────────────────── */
 
@@ -159,17 +140,37 @@ typedef enum {
     SYN_ATUNE_ABORT_WATCHDOG   = 4,  /**< update() not called in time      */
     SYN_ATUNE_ABORT_USER       = 5,  /**< User called abort()              */
     SYN_ATUNE_ABORT_STALL      = 6,  /**< Motor not responding to output   */
+    SYN_ATUNE_ABORT_NO_MOTION  = 7,  /**< Could not detect motion in PROBE */
 } SYN_AutoTune_AbortReason;
+
+/** @brief Telemetry frame ID for Auto-Tune data. */
+#define SYN_ATUNE_LOG_ID  0x4154  /* 'AT' */
+
+/** @brief Telemetry frame for Auto-Tune capture. */
+typedef struct {
+    uint8_t  state;      /**< SYN_AutoTune_State                       */
+    int16_t  output;     /**< Applied output percentage                */
+    int32_t  position;   /**< Current position                         */
+    int32_t  velocity;   /**< Current velocity                         */
+} SYN_AutoTune_LogFrame;
+
+/** @brief Physical constraints for the one-call auto-tune. */
+typedef struct {
+    int32_t  position_min;     /**< Min safe position (encoder counts).    */
+    int32_t  position_max;     /**< Max safe position (encoder counts).    */
+    int32_t  max_velocity;     /**< Max safe velocity (counts/sec). 0=none.*/
+    uint32_t watchdog_ms;      /**< Abort if update() gap exceeds this.    */
+} SYN_AutoTune_Limits;
 
 /* ── Configuration ─────────────────────────────────────────────────────── */
 
 /** @brief Auto-tuner configuration. */
 typedef struct {
-    SYN_AutoTune_Mode   mode;        /**< Operating mode (FF or relay)      */
+    SYN_AutoTune_Mode   mode;        /**< Operating mode                    */
 
-    /** Motor output during test (% of output_max, always positive).
-     *  For a 300 lb mover, 15-25 is a good starting range. */
-    int32_t             test_output;  /**< % of output during test          */
+    /** Motor output during test (% of output_max).
+     *  If 0, the tuner will probe for the minimum motion output. */
+    int32_t             test_output;
 
     /* FF identification timing */
     uint32_t            settle_ms;       /**< Time to reach steady-state    */
@@ -180,22 +181,25 @@ typedef struct {
     uint8_t             relay_cycles;    /**< Oscillation cycles to measure */
     SYN_AutoTune_Method method;          /**< PID gain formula              */
 
+    /* Telemetry (optional) */
+    SYN_DataLog        *datalog;         /**< If set, capture tuning telemetry */
+
+    SYN_AutoTune_Flags  flags;           /**< Feature enablement flags      */
+
     /* ── Safety (all mandatory for heavy machinery) ─────────────── */
-
-    /** Abort if displacement from start exceeds this (units).
-     *  MUST be set — there is no default. */
-    int32_t             position_limit;
-
-    /** Abort if velocity exceeds this (units/sec). 0 = no limit. */
-    int32_t             velocity_limit;
+    SYN_AutoTune_Limits limits;          /**< Physical constraints          */
 
     /** Abort if update() not called within this time (ms).
-     *  Protects against application crashes. Default: 200 ms. */
+     *  Protects against application crashes. Default: 500 ms. */
     uint32_t            watchdog_ms;
 
     /** Ramp time — ms to ramp from 0 to test_output. Default: 500 ms.
      *  Prevents jerking heavy loads with a step input. */
     uint32_t            ramp_ms;
+
+    /** Gain multiplier percentage (1-200). Default: 100.
+     *  Allows applying a safety margin to calculated PID gains (e.g., 80 for 80%). */
+    uint16_t            gain_multiplier_pct;
 } SYN_AutoTune_Config;
 
 /* ── Result ────────────────────────────────────────────────────────────── */
@@ -204,8 +208,10 @@ typedef struct {
 typedef struct {
     /* Feedforward identification results */
     int32_t  ff_kv;           /**< Computed velocity feedforward gain      */
+    int32_t  ff_ka;           /**< Computed inertia feedforward gain       */
     uint8_t  ff_scale;        /**< Feedforward scale (same as ctrl cfg)    */
-    int32_t  steady_velocity; /**< Measured steady-state velocity          */
+    int32_t  steady_velocity_1; /**< Measured velocity at point 1            */
+    int32_t  steady_velocity_2; /**< Measured velocity at point 2            */
 
     /* Relay feedback results */
     int32_t  Ku;              /**< Ultimate gain (scaled by pid_scale)     */
@@ -229,15 +235,26 @@ typedef struct {
 
     /* Internal state */
     int32_t               start_position; /**< Position when tuning started */
-    uint32_t              phase_start_tick;/**< Tick at phase start         */
-    uint32_t              last_update_tick;/**< For watchdog                */
-    int32_t               current_output; /**< Current applied output      */
+    uint32_t              phase_start_tick;/**< Tick count when current phase started */
+    uint32_t              last_update_tick;/**< Tick count of last update() call      */
+    int32_t               current_output;  /**< Current applied output percentage     */
+    int32_t               start_output;    /**< Output at start of ramp-down          */
+
+    /* Steady-state monitoring */
+    int32_t               history_v;       /**< Velocity sample from previous check   */
+    uint32_t              last_check_tick; /**< Tick of last steady-state check       */
 
     /* FF ident internals */
     int64_t               velocity_sum;   /**< Accumulated velocity sum    */
     uint32_t              velocity_samples;/**< Number of velocity samples */
+    int32_t               ka_v1;           /**< Initial velocity for Ka identification */
+    int32_t               ka_v2;           /**< Final velocity for Ka identification   */
+    uint32_t              ka_t1;           /**< Initial tick for Ka identification     */
+    uint32_t              ka_t2;           /**< Final tick for Ka identification       */
+    bool                  ka_p1_captured; /**< Point 1 captured            */
+    bool                  ka_p2_captured; /**< Point 2 captured            */
 
-    /* Relay internals */
+    /* Oscillation tracking */
     int32_t               relay_output;    /**< Current relay sign × amp   */
     uint8_t               half_cycles;     /**< Half-cycle counter         */
     uint32_t              last_cross_tick;  /**< Last zero-crossing tick    */
@@ -303,52 +320,24 @@ void syn_autotune_apply(SYN_AutoTune *at);
  */
 void syn_autotune_abort(SYN_AutoTune *at);
 
-/* ── One-call auto-tune API (future) ───────────────────────────────────── */
+/* ── One-call auto-tune API ────────────────────────────────────────────── */
 
 /**
- * @brief Physical constraints for the one-call auto-tune.
- *
- * The auto-tuner uses these limits to decide how far it can move,
- * how fast it can go, and when to abort. Positions are in encoder
- * counts using the same coordinate system as the motor controller.
- *
- * You do NOT need to zero the encoder in the middle of the track.
- * Zero it wherever you home (typically one end), then set position_min
- * and position_max relative to that home position.
- *
- * Example: 50m track, 10000 counts/m, homed at left end:
- * @code
- *   .position_min = 5000,     // 0.5m safety margin from home end
- *   .position_max = 495000,   // 0.5m safety margin from far end
- * @endcode
- */
-typedef struct {
-    int32_t  position_min;     /**< Min safe position (encoder counts).    */
-    int32_t  position_max;     /**< Max safe position (encoder counts).    */
-    int32_t  max_velocity;     /**< Max safe velocity (counts/sec). 0=none.*/
-    uint32_t watchdog_ms;      /**< Abort if update() gap exceeds this.
-                                    0 = default (500 ms).                  */
-} SYN_AutoTune_Limits;
-
-/**
- * @brief Start a fully automatic tune sequence (NOT YET IMPLEMENTED).
+ * @brief Start a fully automatic tune sequence.
  *
  * Runs probe → FF identification → braking → relay PID tune → braking
  * as a single self-sequencing state machine. The user only provides
  * physical constraints.
  *
- * @param at      Auto-tuner instance.
- * @param ctrl    Motor controller (must be stopped).
- * @param limits  Physical constraints (track limits, max velocity).
- * @return SYN_ERROR — not yet implemented. Use syn_autotune_init() for now.
- *
- * @note This API is defined but not yet implemented. It will be built
- *       when real firmware integration provides the context needed to
- *       make the right design decisions (triggering, e-stop interaction,
- *       gain persistence). Use the manual syn_autotune_init() API for now.
+ * @param limits           Physical constraints (track limits, max velocity).
+ * @param flags            Feature flags (e.g., SYN_ATUNE_FLAG_ALL).
+ * @param gain_multiplier  Safety margin for PID gains (percentage, e.g., 80).
+ * @return SYN_OK on success, or error code.
  */
 SYN_Status syn_autotune_start(SYN_AutoTune *at, SYN_MotorCtrl *ctrl,
-                               const SYN_AutoTune_Limits *limits);
+                               const SYN_AutoTune_Limits *limits,
+                               SYN_AutoTune_Flags flags,
+                               uint16_t gain_multiplier);
 
 #ifdef __cplusplus
 }
