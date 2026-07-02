@@ -24,13 +24,12 @@
  *
  *   SYN_MotorCtrl ctrl;
  *   SYN_MotorCtrl_Config cfg = {
- *       .type        = SYN_MCTRL_DC,
+ *       .motor       = syn_dc_motor_output(&my_dc),
  *       .read_pos    = encoder_feedback,
  *       .read_pos_ctx = &my_encoder,
- *       .dc_motor    = &my_dc,
  *       .pid_kp = 200, .pid_ki = 50, .pid_kd = 10, .pid_scale = 8,
- *       .update_hz   = 100,
- *       .output_min  = -255, .output_max = 255,
+ *       .update_hz     = 1000,
+ *       .output_min  = -1000, .output_max = 1000,
  *   };
  *   syn_motor_ctrl_init(&ctrl, &cfg);
  *   syn_motor_ctrl_set_velocity(&ctrl, 500);  // 500 counts/sec
@@ -63,8 +62,9 @@
 
 #include "../common/syn_defs.h"
 #include "../control/syn_pid.h"
-#include "../motor/syn_dc_motor.h"
-#include "../motor/syn_stepper.h"
+#include "../motor/syn_motor_output.h"
+#include "../util/syn_ramp.h"
+#include "../util/syn_scurve.h"
 #include "../port/syn_port_system.h"
 #include "../system/syn_errlog.h"
 #include "../log/syn_datalog.h"
@@ -90,21 +90,14 @@ extern "C" {
  */
 typedef int32_t (*SYN_MotorCtrl_ReadPos)(void *ctx);
 
-/* ── Motor type ─────────────────────────────────────────────────────────── */
-
-/** @brief Motor driver hardware type. */
-typedef enum {
-    SYN_MCTRL_DC      = 0,   /**< DC motor (PWM output)                 */
-    SYN_MCTRL_STEPPER = 1,   /**< Stepper motor (step rate output)      */
-} SYN_MotorCtrl_Type;
-
 /* ── Control mode ───────────────────────────────────────────────────────── */
 
 /** @brief Control loop operating mode. */
 typedef enum {
-    SYN_MCTRL_MODE_IDLE     = 0,  /**< Motor stopped, controller off     */
-    SYN_MCTRL_MODE_VELOCITY = 1,  /**< Maintain target velocity          */
-    SYN_MCTRL_MODE_POSITION = 2,  /**< Move to target position           */
+    SYN_MCTRL_MODE_IDLE      = 0,  /**< Motor stopped, controller off     */
+    SYN_MCTRL_MODE_VELOCITY  = 1,  /**< Maintain target velocity          */
+    SYN_MCTRL_MODE_POSITION  = 2,  /**< Move to target position           */
+    SYN_MCTRL_MODE_OPEN_LOOP = 3,  /**< Direct output, no PID feedback    */
 } SYN_MotorCtrl_Mode;
 
 /* ── Controller state ───────────────────────────────────────────────────── */
@@ -161,7 +154,7 @@ typedef struct {
  * @brief One sample of control-loop telemetry.
  *
  * Written to the attached SYN_DataLog every update() call.
- * At 100 Hz with a 4 KB buffer you get ~1.2 seconds of capture.
+ * At 1000 Hz with a 4 KB buffer you get ~1.2 seconds of capture.
  */
 typedef struct {
     uint32_t tick_ms;         /**< Timestamp                              */
@@ -197,15 +190,12 @@ typedef struct {
 
 /** @brief Motor controller configuration (passed to init, copied internally). */
 typedef struct {
-    SYN_MotorCtrl_Type type;           /**< Motor hardware type              */
+    /* Motor output (mandatory — use syn_dc_motor_output(), etc.) */
+    SYN_MotorOutput         motor;        /**< Motor output interface     */
 
     /* Feedback source (mandatory) */
     SYN_MotorCtrl_ReadPos read_pos;     /**< Position read function       */
     void                  *read_pos_ctx; /**< Context for read_pos         */
-
-    /* Output (set one based on type) */
-    SYN_DCMotor       *dc_motor;     /**< For SYN_MCTRL_DC              */
-    SYN_Stepper       *stepper;      /**< For SYN_MCTRL_STEPPER         */
 
     /* PID gains (integer, divided by 1 << pid_scale) */
 /** @brief PID proportional gain (÷ 1 << pid_scale). */
@@ -245,6 +235,44 @@ typedef struct {
     /* Error logging (optional) */
     SYN_ErrLog            *errlog;            /**< If set, stall/limit events logged */
 } SYN_MotorCtrl_Config;
+
+/**
+ * @brief Convenience macro for a motor controller config with sane defaults.
+ *
+ * Provides a conservative P-only configuration that is stable on most
+ * systems. Override individual fields after initialization to tune.
+ *
+ * @param motor_out   SYN_MotorOutput (e.g., syn_dc_motor_output(&motor)).
+ * @param read_fn     Position read function.
+ * @param read_ctx    Context for read_fn (NULL if unused).
+ * @param hz          Control loop frequency (e.g., 1000).
+ * @param out_max     Maximum output magnitude (symmetric ±out_max).
+ *
+ * @par Example
+ * @code
+ *   SYN_MotorCtrl_Config cfg = SYN_MOTOR_CTRL_DEFAULTS(
+ *       syn_dc_motor_output(&motor), encoder_read, NULL, 1000, 1000
+ *   );
+ *   cfg.pid_ki = 500;  // add integral if needed
+ *   syn_motor_ctrl_init(&ctrl, &cfg);
+ * @endcode
+ */
+#define SYN_MOTOR_CTRL_DEFAULTS(motor_out, read_fn, read_ctx, hz, out_max)  \
+    ((SYN_MotorCtrl_Config){                                                \
+        .motor             = (motor_out),                                   \
+        .read_pos          = (read_fn),                                     \
+        .read_pos_ctx      = (read_ctx),                                    \
+        .update_hz         = (hz),                                          \
+        .output_min        = -(out_max),                                    \
+        .output_max        = (out_max),                                     \
+        .pid_kp            = 1 << 6,    /* 0.25 effective (conservative) */ \
+        .pid_ki            = 0,         /* no integral by default */        \
+        .pid_kd            = 0,         /* no derivative by default */      \
+        .pid_scale         = 8,         /* gains ÷ 256 */                   \
+        .position_deadband = 2,                                             \
+        .stall_timeout_ms  = 1000,                                          \
+        .stall_threshold   = 1,                                             \
+    })
 
 /* ── Controller instance ────────────────────────────────────────────────── */
 
@@ -298,6 +326,15 @@ typedef struct SYN_MotorCtrl {
 
     /** @brief Move metrics — accumulated during each move, zero buffer cost. */
     SYN_MotorCtrl_Metrics  metrics;
+
+    /** @brief Built-in ramp for move_to() (not used when set_trajectory is active). */
+    SYN_Ramp               profile;
+    /** @brief Built-in S-curve for move_to_scurve(). */
+    SYN_SCurve             scurve_profile;
+    /** @brief True when the built-in ramp profile is actively driving. */
+    bool                   profile_active;
+    /** @brief True when the built-in S-curve profile is actively driving. */
+    bool                   scurve_active;
 } SYN_MotorCtrl;
 
 /* ── API ────────────────────────────────────────────────────────────────── */
@@ -310,6 +347,19 @@ typedef struct SYN_MotorCtrl {
  */
 SYN_Status syn_motor_ctrl_init(SYN_MotorCtrl *ctrl,
                                  const SYN_MotorCtrl_Config *cfg);
+
+/**
+ * @brief Drive the motor at a fixed output level (open-loop).
+ *
+ * Bypasses PID — the output value is passed directly to the motor.
+ * Useful for manual jogging, testing motor wiring, or when simple
+ * open-loop control is sufficient. Position feedback is still read
+ * (for soft limits and stall detection) but not used for control.
+ *
+ * @param ctrl    Controller instance.
+ * @param output  Output level (clamped to [output_min, output_max]).
+ */
+void syn_motor_ctrl_set_output(SYN_MotorCtrl *ctrl, int32_t output);
 
 /**
  * @brief Set velocity target (units/second).
@@ -345,6 +395,49 @@ void syn_motor_ctrl_set_position(SYN_MotorCtrl *ctrl, int32_t target);
  */
 void syn_motor_ctrl_set_trajectory(SYN_MotorCtrl *ctrl,
                                     const SYN_MotorCtrl_Trajectory *traj);
+
+/**
+ * @brief Move to position with a built-in trapezoidal velocity profile.
+ *
+ * This is the "batteries included" path — no external profile generator
+ * needed. The controller internally generates a trapezoidal ramp
+ * (accelerate → cruise → decelerate) and feeds it through the normal
+ * trajectory/feedforward path each update() call.
+ *
+ * Equivalent to manually calling syn_ramp_set_target_trapezoid() and
+ * feeding the output into set_trajectory() each tick, but with zero
+ * user-side wiring.
+ *
+ * @param ctrl           Controller instance.
+ * @param target         Target position in feedback units.
+ * @param max_velocity   Maximum velocity (units/second).
+ * @param acceleration   Acceleration (units/second²).
+ */
+void syn_motor_ctrl_move_to(SYN_MotorCtrl *ctrl, int32_t target,
+                             int32_t max_velocity, int32_t acceleration);
+
+/**
+ * @brief Move to position with a built-in jerk-limited S-curve profile.
+ *
+ * Like move_to(), but uses a 7-phase S-curve trajectory that bounds
+ * jerk for the smoothest possible motion. The S-curve natively provides
+ * position, velocity, and acceleration — all three are fed into the
+ * trajectory/feedforward path.
+ *
+ * All kinematic limits are in per-second units:
+ * - max_velocity:   units/second
+ * - max_accel:      units/second²
+ * - max_jerk:       units/second³
+ *
+ * @param ctrl           Controller instance.
+ * @param target         Target position in feedback units.
+ * @param max_velocity   Maximum velocity (units/second).
+ * @param max_accel      Maximum acceleration (units/second²).
+ * @param max_jerk       Maximum jerk (units/second³).
+ */
+void syn_motor_ctrl_move_to_scurve(SYN_MotorCtrl *ctrl, int32_t target,
+                                    int32_t max_velocity, int32_t max_accel,
+                                    int32_t max_jerk);
 
 /**
  * @brief Stop the motor and enter idle mode.

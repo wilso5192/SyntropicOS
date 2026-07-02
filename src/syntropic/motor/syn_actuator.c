@@ -10,6 +10,7 @@
  */
 
 #include "syn_actuator.h"
+#include "../motor/syn_dc_motor.h"
 #include "../util/syn_assert.h"
 
 #include <string.h>
@@ -61,8 +62,7 @@ void syn_actuator_init(SYN_Actuator *act, const SYN_Actuator_Config *cfg)
     /* Configure underlying motor controller */
     SYN_MotorCtrl_Config mc;
     memset(&mc, 0, sizeof(mc));
-    mc.type              = SYN_MCTRL_DC;
-    mc.dc_motor          = cfg->dc_motor;
+    mc.motor             = syn_dc_motor_output(cfg->dc_motor);
     mc.read_pos          = cfg->read_pos;
     mc.read_pos_ctx      = cfg->read_ctx;
     mc.update_hz         = cfg->update_hz;
@@ -71,8 +71,8 @@ void syn_actuator_init(SYN_Actuator *act, const SYN_Actuator_Config *cfg)
     mc.pid_kd            = cfg->pid_kd;
     mc.pid_scale         = cfg->pid_scale;
     mc.position_deadband = cfg->deadband;
-    mc.output_min        = -255;
-    mc.output_max        = 255;
+    mc.output_min        = -cfg->dc_motor->duty_max;
+    mc.output_max        = cfg->dc_motor->duty_max;
     mc.position_min      = cfg->stroke_min;
     mc.position_max      = cfg->stroke_max;
     mc.stall_timeout_ms  = cfg->stall_timeout_ms;

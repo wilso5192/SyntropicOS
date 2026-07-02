@@ -6,8 +6,13 @@
  * (valves, lights, temperature, motor speed, etc.).
  *
  * Supports two modes:
- * - LINEAR:  constant slew rate
- * - SCURVE:  acceleration/deceleration for jerk-free motion
+ * - LINEAR:    constant slew rate
+ * - TRAPEZOID: acceleration/deceleration (trapezoidal velocity profile)
+ *
+ * The trapezoid mode supports optional fixed-point velocity/acceleration
+ * via `syn_ramp_set_target_trapezoid_fp()`. This allows sub-unit-per-tick
+ * resolution — critical when converting from per-second to per-tick at
+ * high update rates where integer truncation would lose precision.
  *
  * Usage:
  * @code
@@ -36,8 +41,8 @@ extern "C" {
 
 /** @brief Ramp profile mode. */
 typedef enum {
-    SYN_RAMP_LINEAR = 0,   /**< Constant rate                             */
-    SYN_RAMP_SCURVE = 1,   /**< Smooth acceleration/deceleration          */
+    SYN_RAMP_LINEAR    = 0,   /**< Constant rate                           */
+    SYN_RAMP_TRAPEZOID = 1,   /**< Smooth acceleration/deceleration        */
 } SYN_RampMode;
 
 /* ── Ramp instance ──────────────────────────────────────────────────────── */
@@ -46,11 +51,13 @@ typedef enum {
 typedef struct {
     int32_t  current;       /**< Current output value                      */
     int32_t  target;        /**< Desired final value                       */
-    int32_t  rate;          /**< Max units per update (slew rate)           */
-    int32_t  velocity;      /**< Current velocity (for S-curve)            */
-    int32_t  accel;         /**< Acceleration (for S-curve, units/tick²)   */
-    uint8_t  mode;          /**< SYN_RampMode                             */
-    bool     done;          /**< true when current == target               */
+    int32_t  rate;          /**< Max velocity per update (in Q`frac_bits`)  */
+    int32_t  velocity;      /**< Current velocity (in Q`frac_bits`)         */
+    int32_t  accel;         /**< Acceleration per tick (in Q`frac_bits`)    */
+    int32_t  frac_accum;    /**< Fractional position accumulator            */
+    uint8_t  frac_bits;     /**< Fixed-point bits (0 = integer, 8 = Q8)     */
+    uint8_t  mode;          /**< SYN_RampMode                              */
+    bool     done;          /**< true when current == target                */
 } SYN_Ramp;
 
 /* ── API ────────────────────────────────────────────────────────────────── */
@@ -73,15 +80,32 @@ void syn_ramp_init(SYN_Ramp *ramp, int32_t initial);
 void syn_ramp_set_target(SYN_Ramp *ramp, int32_t target, int32_t rate);
 
 /**
- * @brief Set new target with S-curve ramp.
+ * @brief Set new target with trapezoidal ramp (acceleration/deceleration).
  *
  * @param ramp     Ramp instance.
  * @param target   Desired final value.
  * @param max_rate Max velocity (units/tick).
  * @param accel    Acceleration (units/tick²). Controls smoothness.
  */
-void syn_ramp_set_target_scurve(SYN_Ramp *ramp, int32_t target,
-                                  int32_t max_rate, int32_t accel);
+void syn_ramp_set_target_trapezoid(SYN_Ramp *ramp, int32_t target,
+                                    int32_t max_rate, int32_t accel);
+
+/**
+ * @brief Set new target with fixed-point trapezoidal ramp.
+ *
+ * Like syn_ramp_set_target_trapezoid(), but velocity and acceleration
+ * are in Q`frac_bits` fixed-point. This allows sub-unit-per-tick
+ * resolution for smooth motion at high update rates.
+ *
+ * @param ramp       Ramp instance.
+ * @param target     Desired final value (integer, not fixed-point).
+ * @param max_rate   Max velocity in Q`frac_bits` (e.g., Q8).
+ * @param accel      Acceleration in Q`frac_bits`.
+ * @param frac_bits  Number of fractional bits (e.g., 8 for Q8).
+ */
+void syn_ramp_set_target_trapezoid_fp(SYN_Ramp *ramp, int32_t target,
+                                      int32_t max_rate, int32_t accel,
+                                      uint8_t frac_bits);
 
 /**
  * @brief Update the ramp — call once per tick.

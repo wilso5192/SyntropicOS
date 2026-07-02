@@ -28,9 +28,19 @@ void syn_pid_init(SYN_PID *pid, const SYN_PID_Config *cfg)
     pid->cfg   = *cfg;
     pid->first = true;
 
-    /* Default integral limit if not set */
+    /* Auto-compute integral_max if not explicitly set.
+     * I-term = (ki * integral) / (1000 * scale).
+     * For I-term to reach out_max:
+     *   integral_max = out_max * scale * 1000 / ki
+     * Use 64-bit to avoid overflow in the multiply. */
     if (pid->cfg.integral_max == 0) {
-        pid->cfg.integral_max = pid->cfg.out_max * pid->cfg.scale;
+        if (pid->cfg.ki > 0) {
+            pid->cfg.integral_max = (int32_t)(
+                ((int64_t)pid->cfg.out_max * pid->cfg.scale * 1000)
+                / pid->cfg.ki);
+        } else {
+            pid->cfg.integral_max = pid->cfg.out_max * pid->cfg.scale;
+        }
     }
 }
 

@@ -47,43 +47,76 @@ static const uint32_t K[64] = {
 
 /* ── Bit operations (FIPS 180-4 §4.1.2) ───────────────────────────────── */
 
-/** @brief Circular right rotate. */
+/**
+ * @brief Circular right rotate.
+ * @param x  Value to rotate.
+ * @param n  Number of bits to rotate.
+ * @return Rotated value.
+ */
 static inline uint32_t rotr(uint32_t x, unsigned n)
 {
     return (x >> n) | (x << (32u - n));
 }
 
-/** @brief Choice function: Ch(x,y,z) = (x ∧ y) ⊕ (¬x ∧ z). */
+/**
+ * @brief Choice function: Ch(x,y,z) = (x ∧ y) ⊕ (¬x ∧ z).
+ * @param x  First input.
+ * @param y  Second input.
+ * @param z  Third input.
+ * @return Ch(x, y, z).
+ */
 static inline uint32_t ch(uint32_t x, uint32_t y, uint32_t z)
 {
     return (x & y) ^ (~x & z);
 }
 
-/** @brief Majority function: Maj(x,y,z) = (x ∧ y) ⊕ (x ∧ z) ⊕ (y ∧ z). */
+/**
+ * @brief Majority function: Maj(x,y,z) = (x ∧ y) ⊕ (x ∧ z) ⊕ (y ∧ z).
+ * @param x  First input.
+ * @param y  Second input.
+ * @param z  Third input.
+ * @return Maj(x, y, z).
+ */
 static inline uint32_t maj(uint32_t x, uint32_t y, uint32_t z)
 {
     return (x & y) ^ (x & z) ^ (y & z);
 }
 
-/** @brief Big Sigma-0: Σ₀(x) = ROTR²(x) ⊕ ROTR¹³(x) ⊕ ROTR²²(x). */
+/**
+ * @brief Big Sigma-0: Σ₀(x) = ROTR²(x) ⊕ ROTR¹³(x) ⊕ ROTR²²(x).
+ * @param x  Input word.
+ * @return Σ₀(x).
+ */
 static inline uint32_t sigma0(uint32_t x)
 {
     return rotr(x, 2) ^ rotr(x, 13) ^ rotr(x, 22);
 }
 
-/** @brief Big Sigma-1: Σ₁(x) = ROTR⁶(x) ⊕ ROTR¹¹(x) ⊕ ROTR²⁵(x). */
+/**
+ * @brief Big Sigma-1: Σ₁(x) = ROTR⁶(x) ⊕ ROTR¹¹(x) ⊕ ROTR²⁵(x).
+ * @param x  Input word.
+ * @return Σ₁(x).
+ */
 static inline uint32_t sigma1(uint32_t x)
 {
     return rotr(x, 6) ^ rotr(x, 11) ^ rotr(x, 25);
 }
 
-/** @brief Small sigma-0: σ₀(x) = ROTR⁷(x) ⊕ ROTR¹⁸(x) ⊕ SHR³(x). */
+/**
+ * @brief Small sigma-0: σ₀(x) = ROTR⁷(x) ⊕ ROTR¹⁸(x) ⊕ SHR³(x).
+ * @param x  Input word.
+ * @return σ₀(x).
+ */
 static inline uint32_t gamma0(uint32_t x)
 {
     return rotr(x, 7) ^ rotr(x, 18) ^ (x >> 3);
 }
 
-/** @brief Small sigma-1: σ₁(x) = ROTR¹⁷(x) ⊕ ROTR¹⁹(x) ⊕ SHR¹⁰(x). */
+/**
+ * @brief Small sigma-1: σ₁(x) = ROTR¹⁷(x) ⊕ ROTR¹⁹(x) ⊕ SHR¹⁰(x).
+ * @param x  Input word.
+ * @return σ₁(x).
+ */
 static inline uint32_t gamma1(uint32_t x)
 {
     return rotr(x, 17) ^ rotr(x, 19) ^ (x >> 10);

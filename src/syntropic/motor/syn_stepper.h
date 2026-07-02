@@ -24,6 +24,7 @@
 
 #include "../common/syn_defs.h"
 #include "../drivers/syn_gpio.h"
+#include "../motor/syn_motor_output.h"
 #include "../port/syn_port_system.h"
 
 #include <stdbool.h>
@@ -179,6 +180,19 @@ static inline void syn_stepper_set_position(SYN_Stepper *s, int32_t pos)
 {
     s->position = pos;
 }
+
+/**
+ * @brief Create a SYN_MotorOutput interface for this stepper.
+ *
+ * The set_output callback calls syn_stepper_tick(), coast/brake
+ * both call syn_stepper_stop(). The motor controller's output
+ * value is not used directly — stepper motion is driven by
+ * the stepper's own move/move_to commands.
+ *
+ * @param stepper  Stepper instance (must outlive the returned output).
+ * @return Motor output interface.
+ */
+SYN_MotorOutput syn_stepper_output(SYN_Stepper *stepper);
 
 #ifdef __cplusplus
 }

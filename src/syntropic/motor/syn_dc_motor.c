@@ -17,14 +17,15 @@
 /* ── Helpers ────────────────────────────────────────────────────────────── */
 
 /**
- * @brief Clamp speed to the valid range (-100 to +100).
+ * @brief Clamp speed to the valid range [-duty_max, +duty_max].
+ * @param motor  Motor instance (for duty_max).
  * @param speed  Raw speed value.
  * @return Clamped speed.
  */
-static int16_t clamp_speed(int16_t speed)
+static int32_t clamp_speed(const SYN_DCMotor *motor, int32_t speed)
 {
-    if (speed > 100)  return 100;
-    if (speed < -100) return -100;
+    if (speed > motor->duty_max)  return motor->duty_max;
+    if (speed < -motor->duty_max) return -motor->duty_max;
     return speed;
 }
 
@@ -34,11 +35,11 @@ static int16_t clamp_speed(int16_t speed)
  */
 static void apply_speed(SYN_DCMotor *m)
 {
-    int16_t spd = m->speed;
+    int32_t spd = m->speed;
     bool forward = (spd >= 0);
     if (m->invert) forward = !forward;
 
-    uint8_t duty = (uint8_t)(spd >= 0 ? spd : -spd);
+    uint16_t duty = (uint16_t)(spd >= 0 ? spd : -spd);
 
     switch ((SYN_DCMotorMode)m->mode) {
     case SYN_DC_MODE_PWM_DIR:
@@ -79,6 +80,37 @@ static void apply_speed(SYN_DCMotor *m)
     }
 }
 
+/* ── SYN_MotorOutput adapter ───────────────────────────────────────────── */
+
+/**
+ * @brief Set output adapter for SYN_MotorOutput.
+ * @param ctx     DC motor instance (SYN_DCMotor*).
+ * @param output  Signed output level.
+ */
+static void dc_output_set(void *ctx, int32_t output)
+{
+    SYN_DCMotor *m = (SYN_DCMotor *)ctx;
+    syn_dc_motor_set_speed(m, output);
+}
+
+/**
+ * @brief Coast adapter for SYN_MotorOutput.
+ * @param ctx  DC motor instance (SYN_DCMotor*).
+ */
+static void dc_output_coast(void *ctx)
+{
+    syn_dc_motor_coast((SYN_DCMotor *)ctx);
+}
+
+/**
+ * @brief Brake adapter for SYN_MotorOutput.
+ * @param ctx  DC motor instance (SYN_DCMotor*).
+ */
+static void dc_output_brake(void *ctx)
+{
+    syn_dc_motor_brake((SYN_DCMotor *)ctx);
+}
+
 /* ── API ────────────────────────────────────────────────────────────────── */
 
 void syn_dc_motor_init(SYN_DCMotor *motor, SYN_GPIO_Pin pin_a,
@@ -87,16 +119,17 @@ void syn_dc_motor_init(SYN_DCMotor *motor, SYN_GPIO_Pin pin_a,
     SYN_ASSERT(motor != NULL);
 
     memset(motor, 0, sizeof(*motor));
-    motor->pin_a = pin_a;
-    motor->pin_b = pin_b;
-    motor->mode  = (uint8_t)mode;
+    motor->pin_a    = pin_a;
+    motor->pin_b    = pin_b;
+    motor->mode     = (uint8_t)mode;
+    motor->duty_max = SYN_DC_MOTOR_DUTY_MAX_DEFAULT;
 
     syn_port_gpio_write(pin_a, SYN_GPIO_LOW);
     syn_port_gpio_write(pin_b, SYN_GPIO_LOW);
 }
 
 void syn_dc_motor_set_duty_callback(SYN_DCMotor *motor,
-                                     void (*cb)(SYN_GPIO_Pin, uint8_t, void *),
+                                     void (*cb)(SYN_GPIO_Pin, uint16_t, void *),
                                      void *ctx)
 {
     SYN_ASSERT(motor != NULL);
@@ -104,21 +137,21 @@ void syn_dc_motor_set_duty_callback(SYN_DCMotor *motor,
     motor->duty_ctx = ctx;
 }
 
-void syn_dc_motor_set_speed(SYN_DCMotor *motor, int16_t speed)
+void syn_dc_motor_set_speed(SYN_DCMotor *motor, int32_t speed)
 {
     SYN_ASSERT(motor != NULL);
-    speed = clamp_speed(speed);
+    speed = clamp_speed(motor, speed);
     motor->speed     = speed;
     motor->target    = speed;
     motor->ramp_rate = 0;
     apply_speed(motor);
 }
 
-void syn_dc_motor_ramp_to(SYN_DCMotor *motor, int16_t speed,
+void syn_dc_motor_ramp_to(SYN_DCMotor *motor, int32_t speed,
                            uint16_t duration)
 {
     SYN_ASSERT(motor != NULL);
-    speed = clamp_speed(speed);
+    speed = clamp_speed(motor, speed);
     motor->target = speed;
 
     if (duration == 0) {
@@ -128,8 +161,8 @@ void syn_dc_motor_ramp_to(SYN_DCMotor *motor, int16_t speed,
         return;
     }
 
-    int32_t delta = (int32_t)speed - (int32_t)motor->speed;
-    /* Rate in % per ms, Q8 fixed-point */
+    int32_t delta = speed - motor->speed;
+    /* Rate in units per ms, Q8 fixed-point */
     motor->ramp_rate = (delta * 256) / (int32_t)duration;
     if (motor->ramp_rate == 0 && delta != 0) {
         motor->ramp_rate = (delta > 0) ? 1 : -1;
@@ -154,14 +187,14 @@ void syn_dc_motor_update(SYN_DCMotor *motor)
         delta = (motor->ramp_rate > 0) ? 1 : -1;
     }
 
-    int32_t new_speed = (int32_t)motor->speed + delta;
+    int32_t new_speed = motor->speed + delta;
 
-    if ((motor->ramp_rate > 0 && new_speed >= (int32_t)motor->target) ||
-        (motor->ramp_rate < 0 && new_speed <= (int32_t)motor->target)) {
+    if ((motor->ramp_rate > 0 && new_speed >= motor->target) ||
+        (motor->ramp_rate < 0 && new_speed <= motor->target)) {
         motor->speed     = motor->target;
         motor->ramp_rate = 0;
     } else {
-        motor->speed = clamp_speed((int16_t)new_speed);
+        motor->speed = clamp_speed(motor, new_speed);
     }
 
     apply_speed(motor);
@@ -185,6 +218,26 @@ void syn_dc_motor_brake(SYN_DCMotor *motor)
     motor->ramp_rate = 0;
     syn_port_gpio_write(motor->pin_a, SYN_GPIO_HIGH);
     syn_port_gpio_write(motor->pin_b, SYN_GPIO_HIGH);
+}
+
+void syn_dc_motor_set_duty_max(SYN_DCMotor *motor, int32_t duty_max)
+{
+    SYN_ASSERT(motor != NULL);
+    SYN_ASSERT(duty_max > 0);
+    motor->duty_max = duty_max;
+    motor->speed    = 0;
+    motor->target   = 0;
+}
+
+SYN_MotorOutput syn_dc_motor_output(SYN_DCMotor *motor)
+{
+    SYN_MotorOutput out = {
+        .set_output = dc_output_set,
+        .coast      = dc_output_coast,
+        .brake      = dc_output_brake,
+        .ctx        = motor,
+    };
+    return out;
 }
 
 #endif /* SYN_USE_DC_MOTOR */

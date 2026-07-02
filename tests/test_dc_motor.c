@@ -11,10 +11,10 @@
 /* ── Duty callback capture ──────────────────────────────────────────────── */
 
 static uint16_t last_duty_pin;
-static uint8_t  last_duty_val;
+static uint16_t last_duty_val;
 static int      duty_call_count;
 
-static void duty_cb(SYN_GPIO_Pin pin, uint8_t duty, void *ctx)
+static void duty_cb(SYN_GPIO_Pin pin, uint16_t duty, void *ctx)
 {
     (void)ctx;
     last_duty_pin = pin;
@@ -45,9 +45,9 @@ static void test_dc_motor(void)
     TEST_ASSERT_EQUAL_INT(-50, syn_dc_motor_get_speed(&motor));
     TEST_ASSERT_EQUAL(SYN_GPIO_LOW, mock_gpio_states[4]);
 
-    /* Clamping */
-    syn_dc_motor_set_speed(&motor, 200);
-    TEST_ASSERT_EQUAL_INT(100, syn_dc_motor_get_speed(&motor));
+    /* Clamping (duty_max defaults to 1000) */
+    syn_dc_motor_set_speed(&motor, 2000);
+    TEST_ASSERT_EQUAL_INT(1000, syn_dc_motor_get_speed(&motor));
 
     /* Coast */
     syn_dc_motor_coast(&motor);
@@ -63,7 +63,7 @@ static void test_dc_motor(void)
     /* Ramp */
     mock_tick_ms = 0;
     syn_dc_motor_set_speed(&motor, 0);
-    syn_dc_motor_ramp_to(&motor, 100, 100);
+    syn_dc_motor_ramp_to(&motor, 1000, 100);
     TEST_ASSERT_FALSE(syn_dc_motor_at_target(&motor));
 
     mock_tick_advance(50);
@@ -73,7 +73,7 @@ static void test_dc_motor(void)
     mock_tick_advance(60);
     syn_dc_motor_update(&motor);
     TEST_ASSERT_TRUE(syn_dc_motor_at_target(&motor));
-    TEST_ASSERT_EQUAL_INT(100, syn_dc_motor_get_speed(&motor));
+    TEST_ASSERT_EQUAL_INT(1000, syn_dc_motor_get_speed(&motor));
 }
 
 /* ── Test: PWM_DIR mode with duty callback ──────────────────────────────── */
@@ -179,8 +179,8 @@ static void test_dc_motor_ramp_instant(void)
     syn_dc_motor_set_speed(&motor, 0);
 
     /* duration==0 → instant speed change */
-    syn_dc_motor_ramp_to(&motor, 80, 0);
-    TEST_ASSERT_EQUAL_INT(80, syn_dc_motor_get_speed(&motor));
+    syn_dc_motor_ramp_to(&motor, 800, 0);
+    TEST_ASSERT_EQUAL_INT(800, syn_dc_motor_get_speed(&motor));
     TEST_ASSERT_TRUE(syn_dc_motor_at_target(&motor));
     TEST_ASSERT_EQUAL_INT(0, motor.ramp_rate);
 }
@@ -261,13 +261,13 @@ static void test_dc_motor_ramp_downward(void)
     mock_tick_ms = 0;
     SYN_DCMotor motor;
     syn_dc_motor_init(&motor, 1, 2, SYN_DC_MODE_PWM_DIR);
-    syn_dc_motor_set_speed(&motor, 100);
+    syn_dc_motor_set_speed(&motor, 1000);
     syn_dc_motor_ramp_to(&motor, 0, 100);
     TEST_ASSERT_TRUE(motor.ramp_rate < 0);
 
     mock_tick_advance(50);
     syn_dc_motor_update(&motor);
-    TEST_ASSERT_TRUE(syn_dc_motor_get_speed(&motor) < 100);
+    TEST_ASSERT_TRUE(syn_dc_motor_get_speed(&motor) < 1000);
 
     mock_tick_advance(60);
     syn_dc_motor_update(&motor);
@@ -281,8 +281,8 @@ static void test_dc_motor_clamp_negative(void)
 {
     SYN_DCMotor motor;
     syn_dc_motor_init(&motor, 1, 2, SYN_DC_MODE_PWM_DIR);
-    syn_dc_motor_set_speed(&motor, -200);
-    TEST_ASSERT_EQUAL_INT(-100, syn_dc_motor_get_speed(&motor));
+    syn_dc_motor_set_speed(&motor, -2000);
+    TEST_ASSERT_EQUAL_INT(-1000, syn_dc_motor_get_speed(&motor));
 }
 
 /* ── Test runner ─────────────────────────────────────────────────────── */

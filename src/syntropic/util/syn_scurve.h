@@ -41,6 +41,38 @@ typedef struct {
     bool done;        /**< True if target reached */
 } SYN_SCurve;
 
+/* ── Kinematic state getters ───────────────────────────────────────────── */
+
+/**
+ * @brief Get current position.
+ * @param sc  S-curve instance.
+ * @return Current position value.
+ */
+static inline int32_t syn_scurve_position(const SYN_SCurve *sc) { return sc->p; }
+
+/**
+ * @brief Get current velocity.
+ * @param sc  S-curve instance.
+ * @return Current velocity value.
+ */
+static inline int32_t syn_scurve_velocity(const SYN_SCurve *sc) { return sc->v; }
+
+/**
+ * @brief Get current acceleration.
+ * @param sc  S-curve instance.
+ * @return Current acceleration value.
+ */
+static inline int32_t syn_scurve_acceleration(const SYN_SCurve *sc) { return sc->a; }
+
+/**
+ * @brief Check if trajectory is complete.
+ * @param sc  S-curve instance.
+ * @return true if target reached.
+ */
+static inline bool syn_scurve_done(const SYN_SCurve *sc) { return sc->done; }
+
+/* ── API ────────────────────────────────────────────────────────────────── */
+
 /**
  * @brief Initialize the S-Curve generator.
  * @param sc       Pointer to generator.

@@ -108,13 +108,9 @@ SYN_Status syn_fwupdate_write(SYN_FwUpdate *upd,
  *
  * Flushes any remaining buffered data, verifies the CRC-32 matches
  * the expected value, and writes the image header with state = NEW.
- * When SYN_FW_USE_HMAC is enabled, also verifies the HMAC-SHA256 if
- * expected_hmac is non-NULL (pass NULL to skip HMAC and use CRC only).
  *
  * @param upd            Updater instance.
  * @param expected_crc   Expected CRC-32 of the full image.
- * @param expected_hmac  Expected HMAC-SHA256 (32 bytes), or NULL for
- *                       CRC-only verification (SYN_FW_USE_HMAC only).
  * @param version_code   Version code for the new image.
  * @return SYN_OK if verification passes and header written,
  *         SYN_ERROR on mismatch or flash failure.

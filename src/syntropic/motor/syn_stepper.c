@@ -203,4 +203,47 @@ void syn_stepper_enable(const SYN_Stepper *s, bool enable)
     syn_port_gpio_write(s->enable_pin, lvl);
 }
 
+/* ── SYN_MotorOutput adapter ───────────────────────────────────────────── */
+
+/**
+ * @brief Set output adapter for SYN_MotorOutput (ticks the stepper).
+ * @param ctx     Stepper instance (SYN_Stepper*).
+ * @param output  Unused — stepper motion is driven by its own commands.
+ */
+static void stepper_output_set(void *ctx, int32_t output)
+{
+    SYN_Stepper *s = (SYN_Stepper *)ctx;
+    (void)output;
+    syn_stepper_tick(s);
+}
+
+/**
+ * @brief Coast adapter for SYN_MotorOutput.
+ * @param ctx  Stepper instance (SYN_Stepper*).
+ */
+static void stepper_output_coast(void *ctx)
+{
+    syn_stepper_stop((SYN_Stepper *)ctx);
+}
+
+/**
+ * @brief Brake adapter for SYN_MotorOutput.
+ * @param ctx  Stepper instance (SYN_Stepper*).
+ */
+static void stepper_output_brake(void *ctx)
+{
+    syn_stepper_stop((SYN_Stepper *)ctx);
+}
+
+SYN_MotorOutput syn_stepper_output(SYN_Stepper *stepper)
+{
+    SYN_MotorOutput out = {
+        .set_output = stepper_output_set,
+        .coast      = stepper_output_coast,
+        .brake      = stepper_output_brake,
+        .ctx        = stepper,
+    };
+    return out;
+}
+
 #endif /* SYN_USE_STEPPER */

@@ -38,7 +38,7 @@ SyntropicOS/                          ← this repo (add as submodule or Arduino
 │   │   ├── display/               ← hardware-independent canvas, shape primitives & bitmap drawing
 │   │   ├── ui/                    ← interactive menu layouts & zero-allocation IMGUI framework
 │   │   ├── control/               ← PID controller, auto-tuner
-│   │   ├── motor/                 ← stepper, servo, DC motor, closed-loop motor ctrl, actuator
+│   │   ├── motor/                 ← motor output abstraction, stepper, servo, DC motor, closed-loop motor ctrl, actuator
 │   │   ├── dsp/                   ← digital filters, signal statistics, biquad, FFT
 │   │   ├── proto/                 ← COBS framing, Modbus RTU
 │   │   ├── net/                   ← cooperative network stack (HTTP, WebSockets, MQTT, DNS, mDNS, CoAP)

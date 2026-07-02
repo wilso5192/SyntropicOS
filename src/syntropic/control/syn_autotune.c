@@ -15,13 +15,8 @@
 static void apply_raw_output(SYN_AutoTune *at, int32_t output)
 {
     at->current_output = output;
-    if (at->ctrl->cfg.type == SYN_MCTRL_DC && at->ctrl->cfg.dc_motor != NULL) {
-        int16_t speed;
-        if (output > 100) speed = 100;
-        else if (output < -100) speed = -100;
-        else speed = (int16_t)output;
-        syn_dc_motor_set_speed(at->ctrl->cfg.dc_motor, speed);
-        syn_dc_motor_update(at->ctrl->cfg.dc_motor);
+    if (at->ctrl->cfg.motor.set_output != NULL) {
+        at->ctrl->cfg.motor.set_output(at->ctrl->cfg.motor.ctx, output);
     }
 }
 

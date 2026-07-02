@@ -33,6 +33,7 @@
 #define SYN_ACTUATOR_H
 
 #include "../common/syn_defs.h"
+#include "../motor/syn_dc_motor.h"
 #include "../motor/syn_motor_ctrl.h"
 
 #include <stdbool.h>

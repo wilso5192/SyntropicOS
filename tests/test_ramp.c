@@ -30,7 +30,7 @@ static void test_ramp(void)
     syn_ramp_update(&r);
     TEST_ASSERT_TRUE(syn_ramp_value(&r) == 1002);
     syn_ramp_init(&r, 0);
-    syn_ramp_set_target_scurve(&r, 1000, 100, 10);
+    syn_ramp_set_target_trapezoid(&r, 1000, 100, 10);
     int iters = 0;
     while (!syn_ramp_done(&r) && iters < 500) { syn_ramp_update(&r); iters++; }
     TEST_ASSERT_TRUE(syn_ramp_done(&r));
@@ -58,7 +58,7 @@ static void test_ramp_scurve_negative_velocity_decel(void)
     SYN_Ramp r;
     syn_ramp_init(&r, 1000);
     /* Set target below current to force negative velocity */
-    syn_ramp_set_target_scurve(&r, 0, 50, 5);
+    syn_ramp_set_target_trapezoid(&r, 0, 50, 5);
 
     /* Run until done or max iterations */
     int iters = 0;
@@ -75,7 +75,7 @@ static void test_ramp_scurve_at_target(void)
 {
     SYN_Ramp r;
     syn_ramp_init(&r, 200);
-    syn_ramp_set_target_scurve(&r, 200, 50, 5); /* same as current */
+    syn_ramp_set_target_trapezoid(&r, 200, 50, 5); /* same as current */
     syn_ramp_update(&r);
     TEST_ASSERT_TRUE(syn_ramp_done(&r));
 }
@@ -112,7 +112,7 @@ static void test_ramp_scurve_done_at_diff_zero(void)
 {
     SYN_Ramp r;
     syn_ramp_init(&r, 200);
-    syn_ramp_set_target_scurve(&r, 200, 50, 5);
+    syn_ramp_set_target_trapezoid(&r, 200, 50, 5);
     /* Already at target, velocity=0, done=true. Force done=false to enter update_scurve */
     r.done = false;
     int32_t v = syn_ramp_update(&r); /* diff==0 && vel==0 → hits lines 89-91 */

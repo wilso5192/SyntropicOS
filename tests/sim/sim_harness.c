@@ -282,10 +282,9 @@ static void init_plant_and_ctrl(const TestScenario *sc)
 
     /* Init controller with zero gains */
     SYN_MotorCtrl_Config cfg = {
-        .type         = SYN_MCTRL_DC,
+        .motor        = syn_dc_motor_output(&g_dc_motor),
         .read_pos     = read_encoder,
         .read_pos_ctx = NULL,
-        .dc_motor     = &g_dc_motor,
         .pid_kp       = 0,
         .pid_ki       = 0,
         .pid_kd       = 0,
@@ -294,8 +293,8 @@ static void init_plant_and_ctrl(const TestScenario *sc)
         .ff_ka        = 0,
         .ff_scale     = 8,
         .update_hz    = UPDATE_HZ,
-        .output_min   = -100,
-        .output_max   = 100,
+        .output_min   = -g_dc_motor.duty_max,
+        .output_max   = g_dc_motor.duty_max,
         .position_deadband = (int32_t)(sc->params.encoder_noise_counts * 3),
     };
 

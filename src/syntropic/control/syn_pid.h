@@ -1,16 +1,44 @@
 /**
  * @file syn_pid.h
- * @brief General-purpose PID controller — integer or floating-point.
+ * @brief General-purpose PID controller — integer arithmetic.
  *
  * A discrete-time PID with anti-windup, output clamping, derivative
  * filtering, and configurable gain scaling. Works for motor speed,
  * temperature, position, or any closed-loop control.
  *
- * @par Usage
+ * @par Gain Scaling
+ * All gains are integers divided by @c scale. This allows fractional
+ * control without floating-point:
+ *
+ * | Parameter | Effective value | Notes |
+ * |-----------|-----------------|-------|
+ * | kp        | kp / scale      | Proportional |
+ * | ki        | ki / (scale × 1000) | **Note the ×1000 for time normalization** |
+ * | kd        | kd / scale      | Derivative (with dt normalization) |
+ *
+ * The I-term accumulates error×dt_ms, so the division by 1000 converts
+ * millisecond-accumulation into seconds. This means `ki` must be ~1000×
+ * larger than you'd expect compared to kp/kd for equivalent effect.
+ *
+ * @par Convenience Macro
+ * Use SYN_PID_GAINS() to set gains from intuitive values:
+ * @code
+ *   // Instead of manually computing scaled values:
+ *   SYN_PID_Config cfg = SYN_PID_GAINS(
+ *       1.5,    // kp (proportional)
+ *       0.5,    // ki (integral, per-second — NOT per-millisecond)
+ *       0.1,    // kd (derivative)
+ *       256,    // scale
+ *       -1000, 1000  // output range
+ *   );
+ *   // Produces: kp=384, ki=128000, kd=25, scale=256
+ * @endcode
+ *
+ * @par Usage (manual)
  * @code
  *   SYN_PID pid;
  *   SYN_PID_Config cfg = {
- *       .kp = 100, .ki = 10, .kd = 50,
+ *       .kp = 100, .ki = 10000, .kd = 50,
  *       .scale = 100,        // gains are /100
  *       .out_min = -1000, .out_max = 1000,
  *       .d_filter_alpha = 128,
@@ -37,17 +65,50 @@ extern "C" {
 
 /** @brief PID controller configuration. */
 typedef struct {
-    int32_t  kp;              /**< Proportional gain (scaled by @c scale)  */
-    int32_t  ki;              /**< Integral gain     (scaled by @c scale)  */
-    int32_t  kd;              /**< Derivative gain   (scaled by @c scale)  */
-    int32_t  scale;           /**< Gain divisor (e.g., 100 means kp=100→1.0) */
+    int32_t  kp;              /**< Proportional gain (÷ scale)            */
+    int32_t  ki;              /**< Integral gain     (÷ scale × 1000)     */
+    int32_t  kd;              /**< Derivative gain   (÷ scale)            */
+    int32_t  scale;           /**< Gain divisor (e.g., 256 for 8-bit)     */
 
     int32_t  out_min;         /**< Minimum output value                   */
     int32_t  out_max;         /**< Maximum output value                   */
-    int32_t  integral_max;    /**< Max integral accumulator (anti-windup) */
+    int32_t  integral_max;    /**< Max integral accumulator (0 = auto)    */
 
     uint8_t  d_filter_alpha;  /**< EMA alpha for D-term (0=off, 255=no filter) */
 } SYN_PID_Config;
+
+/**
+ * @brief Convenience macro to create a PID config from human-readable gains.
+ *
+ * Accepts floating-point gain values and a scale factor. Computes the
+ * integer ki with the ×1000 factor built in, so you specify ki as a
+ * normal per-second integral gain.
+ *
+ * @param kp_f       Proportional gain (float).
+ * @param ki_f       Integral gain per second (float).
+ * @param kd_f       Derivative gain (float).
+ * @param scale_val  Integer scale divisor (e.g., 256).
+ * @param omin       Minimum output.
+ * @param omax       Maximum output.
+ * @return SYN_PID_Config struct initializer.
+ *
+ * @par Example
+ * @code
+ *   SYN_PID_Config cfg = SYN_PID_GAINS(1.5, 0.5, 0.1, 256, -1000, 1000);
+ *   // kp = (int)(1.5 * 256)       = 384
+ *   // ki = (int)(0.5 * 256 * 1000) = 128000
+ *   // kd = (int)(0.1 * 256)       = 25
+ * @endcode
+ */
+#define SYN_PID_GAINS(kp_f, ki_f, kd_f, scale_val, omin, omax) \
+    ((SYN_PID_Config){                                          \
+        .kp    = (int32_t)((kp_f) * (scale_val)),               \
+        .ki    = (int32_t)((ki_f) * (scale_val) * 1000),        \
+        .kd    = (int32_t)((kd_f) * (scale_val)),               \
+        .scale = (scale_val),                                   \
+        .out_min = (omin),                                      \
+        .out_max = (omax),                                      \
+    })
 
 /* ── PID instance ───────────────────────────────────────────────────────── */
 
@@ -66,6 +127,10 @@ typedef struct {
 
 /**
  * @brief Initialize PID controller.
+ *
+ * If integral_max is 0, it is auto-computed from ki, scale, and out_max
+ * to allow full integral authority without windup.
+ *
  * @param pid  PID instance.
  * @param cfg  Configuration (copied internally).
  */

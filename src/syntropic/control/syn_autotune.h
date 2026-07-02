@@ -35,12 +35,11 @@
  * These are the soft limits the auto-tuner will respect.
  * @code
  *   SYN_MotorCtrl_Config cfg = {
- *       .type          = SYN_MCTRL_DC,
- *       .dc_motor      = &motor,
+ *       .motor         = syn_dc_motor_output(&motor),
  *       .read_pos      = encoder_read,
- *       .update_hz     = 100,
- *       .output_min    = -100,
- *       .output_max    = 100,
+ *       .update_hz     = 1000,
+ *       .output_min    = -1000,
+ *       .output_max    = 1000,
  *       .position_min  = 5000,     // 0.5m from home end (10000 cts/m)
  *       .position_max  = 495000,   // 0.5m from far end
  *   };
