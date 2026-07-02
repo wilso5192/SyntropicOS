@@ -40,6 +40,14 @@
 extern "C" {
 #endif
 
+/* ── Configuration ──────────────────────────────────────────────────────── */
+
+/** @brief Maximum number of priority levels (0 to N-1).
+ *  Override in syn_config.h if more are needed. */
+#ifndef SYN_SCHED_PRIO_LEVELS
+#define SYN_SCHED_PRIO_LEVELS 8
+#endif
+
 /* ── Scheduler struct ───────────────────────────────────────────────────── */
 
 /**
@@ -50,8 +58,9 @@ extern "C" {
  */
 typedef struct {
     SYN_Task  *tasks;         /**< Pointer to caller-owned task array    */
-    size_t      task_count;    /**< Number of tasks in the array          */
-    size_t      rr_index;      /**< Round-robin index for equal priority  */
+    size_t     task_count;    /**< Number of tasks in the array          */
+    size_t     rr_per_prio[SYN_SCHED_PRIO_LEVELS];
+                              /**< Per-priority round-robin indices      */
 } SYN_Sched;
 
 /* ── Initialization ─────────────────────────────────────────────────────── */

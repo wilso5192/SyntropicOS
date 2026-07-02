@@ -240,6 +240,26 @@ typedef enum {
 #define PT_TASK_DELAY_MS(pt, task, ms) \
     PT_DELAY_MS(pt, &(task)->delay_until, ms)
 
+/**
+ * @brief Defer to all ready tasks, regardless of priority.
+ *
+ * Unlike PT_YIELD (which only round-robins among equal-priority tasks),
+ * this macro allows any lower-priority ready task to run before this
+ * task is scheduled again. The task is skipped for exactly one
+ * scheduler pass.
+ *
+ * Use this when a high-priority task has no immediate work but doesn't
+ * want to commit to a timed delay.
+ *
+ * @param pt    Protothread.
+ * @param task  Pointer to the SYN_Task struct.
+ */
+#define PT_DEFER(pt, task)                                    \
+    do {                                                       \
+        (task)->state = (uint8_t)3; /* SYN_TASK_DEFERRED */   \
+        PT_YIELD(pt);                                          \
+    } while (0)
+
 /* ── Query macros ───────────────────────────────────────────────────────── */
 
 /** Check if a protothread is still running (has not exited). */

@@ -194,6 +194,256 @@ static void test_sched_run_forever(void)
     }
 }
 
+/* ── PT_DEFER and per-priority round-robin tests ─────────────────────── */
+
+static int run_log[32];
+static int run_log_idx;
+
+static void log_reset(void) {
+    run_log_idx = 0;
+    memset(run_log, 0, sizeof(run_log));
+}
+
+/* Task that logs its ID and defers every call */
+static SYN_PT_Status defer_task(SYN_PT *pt, SYN_Task *task)
+{
+    int id = *(int *)task->user_data;
+    PT_BEGIN(pt);
+    for (;;) {
+        run_log[run_log_idx++] = id;
+        PT_DEFER(pt, task);
+    }
+    PT_END(pt);
+}
+
+/* Task that logs its ID and yields every call */
+static SYN_PT_Status yield_task(SYN_PT *pt, SYN_Task *task)
+{
+    int id = *(int *)task->user_data;
+    PT_BEGIN(pt);
+    for (;;) {
+        run_log[run_log_idx++] = id;
+        PT_YIELD(pt);
+    }
+    PT_END(pt);
+}
+
+/**
+ * Basic defer: A (pri 0, defers) should let B (pri 1) run every other pass.
+ * Expected pattern: A, B, A, B, ...
+ */
+static void test_defer_basic(void)
+{
+    mock_tick_ms = 0;
+    log_reset();
+
+    SYN_Task tasks[2];
+    SYN_Sched sched;
+    static int id_a = 1, id_b = 2;
+
+    syn_task_create(&tasks[0], "a", defer_task, 0, &id_a);
+    syn_task_create(&tasks[1], "b", yield_task, 1, &id_b);
+    syn_sched_init(&sched, tasks, 2);
+
+    for (int i = 0; i < 6; i++) {
+        syn_sched_run(&sched);
+    }
+
+    /* A, B, A, B, A, B */
+    TEST_ASSERT_EQUAL_INT(1, run_log[0]);
+    TEST_ASSERT_EQUAL_INT(2, run_log[1]);
+    TEST_ASSERT_EQUAL_INT(1, run_log[2]);
+    TEST_ASSERT_EQUAL_INT(2, run_log[3]);
+    TEST_ASSERT_EQUAL_INT(1, run_log[4]);
+    TEST_ASSERT_EQUAL_INT(2, run_log[5]);
+}
+
+/**
+ * Per-priority round-robin: A (pri 0, defers) with B1, B2 (pri 1, yield).
+ * B1 and B2 should alternate fairly: A, B1, A, B2, A, B1, ...
+ */
+static void test_defer_rr_fairness(void)
+{
+    mock_tick_ms = 0;
+    log_reset();
+
+    SYN_Task tasks[3];
+    SYN_Sched sched;
+    static int id_a = 1, id_b1 = 2, id_b2 = 3;
+
+    syn_task_create(&tasks[0], "a",  defer_task, 0, &id_a);
+    syn_task_create(&tasks[1], "b1", yield_task, 1, &id_b1);
+    syn_task_create(&tasks[2], "b2", yield_task, 1, &id_b2);
+    syn_sched_init(&sched, tasks, 3);
+
+    for (int i = 0; i < 8; i++) {
+        syn_sched_run(&sched);
+    }
+
+    /* A, B1, A, B2, A, B1, A, B2 */
+    TEST_ASSERT_EQUAL_INT(1, run_log[0]);  /* A */
+    TEST_ASSERT_EQUAL_INT(2, run_log[1]);  /* B1 */
+    TEST_ASSERT_EQUAL_INT(1, run_log[2]);  /* A */
+    TEST_ASSERT_EQUAL_INT(3, run_log[3]);  /* B2 */
+    TEST_ASSERT_EQUAL_INT(1, run_log[4]);  /* A */
+    TEST_ASSERT_EQUAL_INT(2, run_log[5]);  /* B1 */
+    TEST_ASSERT_EQUAL_INT(1, run_log[6]);  /* A */
+    TEST_ASSERT_EQUAL_INT(3, run_log[7]);  /* B2 */
+}
+
+/**
+ * Same-priority round-robin still works without defer.
+ * Two pri-0 tasks that yield should alternate: A, B, A, B, ...
+ */
+static void test_rr_same_priority(void)
+{
+    mock_tick_ms = 0;
+    log_reset();
+
+    SYN_Task tasks[2];
+    SYN_Sched sched;
+    static int id_a = 1, id_b = 2;
+
+    syn_task_create(&tasks[0], "a", yield_task, 0, &id_a);
+    syn_task_create(&tasks[1], "b", yield_task, 0, &id_b);
+    syn_sched_init(&sched, tasks, 2);
+
+    for (int i = 0; i < 6; i++) {
+        syn_sched_run(&sched);
+    }
+
+    TEST_ASSERT_EQUAL_INT(1, run_log[0]);
+    TEST_ASSERT_EQUAL_INT(2, run_log[1]);
+    TEST_ASSERT_EQUAL_INT(1, run_log[2]);
+    TEST_ASSERT_EQUAL_INT(2, run_log[3]);
+    TEST_ASSERT_EQUAL_INT(1, run_log[4]);
+    TEST_ASSERT_EQUAL_INT(2, run_log[5]);
+}
+
+/**
+ * Strict priority without defer: A (pri 0, yields) starves B (pri 1).
+ * This verifies that defer is needed and that strict priority is preserved.
+ */
+static void test_strict_priority_no_defer(void)
+{
+    mock_tick_ms = 0;
+    log_reset();
+
+    SYN_Task tasks[2];
+    SYN_Sched sched;
+    static int id_a = 1, id_b = 2;
+
+    syn_task_create(&tasks[0], "a", yield_task, 0, &id_a);
+    syn_task_create(&tasks[1], "b", yield_task, 1, &id_b);
+    syn_sched_init(&sched, tasks, 2);
+
+    for (int i = 0; i < 4; i++) {
+        syn_sched_run(&sched);
+    }
+
+    /* Only A runs — B starves (strict priority, no defer) */
+    TEST_ASSERT_EQUAL_INT(1, run_log[0]);
+    TEST_ASSERT_EQUAL_INT(1, run_log[1]);
+    TEST_ASSERT_EQUAL_INT(1, run_log[2]);
+    TEST_ASSERT_EQUAL_INT(1, run_log[3]);
+}
+
+/**
+ * Defer with 3 lower-priority tasks: A (pri 0, defers), B1/B2/B3 (pri 1).
+ * All three should get fair rotation: A, B1, A, B2, A, B3, A, B1, ...
+ */
+static void test_defer_rr_three_lower(void)
+{
+    mock_tick_ms = 0;
+    log_reset();
+
+    SYN_Task tasks[4];
+    SYN_Sched sched;
+    static int id_a = 1, id_b1 = 2, id_b2 = 3, id_b3 = 4;
+
+    syn_task_create(&tasks[0], "a",  defer_task, 0, &id_a);
+    syn_task_create(&tasks[1], "b1", yield_task, 1, &id_b1);
+    syn_task_create(&tasks[2], "b2", yield_task, 1, &id_b2);
+    syn_task_create(&tasks[3], "b3", yield_task, 1, &id_b3);
+    syn_sched_init(&sched, tasks, 4);
+
+    for (int i = 0; i < 8; i++) {
+        syn_sched_run(&sched);
+    }
+
+    /* A, B1, A, B2, A, B3, A, B1 */
+    TEST_ASSERT_EQUAL_INT(1, run_log[0]);  /* A */
+    TEST_ASSERT_EQUAL_INT(2, run_log[1]);  /* B1 */
+    TEST_ASSERT_EQUAL_INT(1, run_log[2]);  /* A */
+    TEST_ASSERT_EQUAL_INT(3, run_log[3]);  /* B2 */
+    TEST_ASSERT_EQUAL_INT(1, run_log[4]);  /* A */
+    TEST_ASSERT_EQUAL_INT(4, run_log[5]);  /* B3 */
+    TEST_ASSERT_EQUAL_INT(1, run_log[6]);  /* A */
+    TEST_ASSERT_EQUAL_INT(2, run_log[7]);  /* B1 */
+}
+
+/**
+ * DEFERRED state lifecycle: task defers → state = DEFERRED → skipped
+ * one pass → cleared back to READY.
+ */
+static void test_defer_state_lifecycle(void)
+{
+    mock_tick_ms = 0;
+
+    SYN_Task tasks[2];
+    SYN_Sched sched;
+    static int id_a = 1, id_b = 2;
+
+    syn_task_create(&tasks[0], "a", defer_task, 0, &id_a);
+    syn_task_create(&tasks[1], "b", yield_task, 1, &id_b);
+    syn_sched_init(&sched, tasks, 2);
+
+    /* Pass 1: A runs and defers */
+    log_reset();
+    syn_sched_run(&sched);
+    TEST_ASSERT_EQUAL_UINT8(SYN_TASK_DEFERRED, tasks[0].state);
+    TEST_ASSERT_EQUAL_UINT8(SYN_TASK_READY,    tasks[1].state);
+
+    /* Pass 2: A skipped (DEFERRED), B runs, A cleared to READY */
+    syn_sched_run(&sched);
+    TEST_ASSERT_EQUAL_UINT8(SYN_TASK_READY, tasks[0].state);
+    TEST_ASSERT_EQUAL_UINT8(SYN_TASK_READY, tasks[1].state);
+}
+
+/**
+ * Defer is compatible with suspend: a deferred task can be suspended,
+ * and when resumed it resumes as READY, not DEFERRED.
+ */
+static void test_defer_then_suspend(void)
+{
+    mock_tick_ms = 0;
+    log_reset();
+
+    SYN_Task tasks[2];
+    SYN_Sched sched;
+    static int id_a = 1, id_b = 2;
+
+    syn_task_create(&tasks[0], "a", defer_task, 0, &id_a);
+    syn_task_create(&tasks[1], "b", yield_task, 1, &id_b);
+    syn_sched_init(&sched, tasks, 2);
+
+    /* A runs and defers */
+    syn_sched_run(&sched);
+    TEST_ASSERT_EQUAL_UINT8(SYN_TASK_DEFERRED, tasks[0].state);
+
+    /* Suspend A while it's deferred */
+    syn_task_suspend(&tasks[0]);
+    TEST_ASSERT_EQUAL_UINT8(SYN_TASK_SUSPENDED, tasks[0].state);
+
+    /* B should run while A is suspended */
+    syn_sched_run(&sched);
+    TEST_ASSERT_EQUAL_INT(2, run_log[1]);
+
+    /* Resume A — should come back as READY */
+    syn_task_resume(&tasks[0]);
+    TEST_ASSERT_EQUAL_UINT8(SYN_TASK_READY, tasks[0].state);
+}
+
 void run_sched_tests(void)
 {
     RUN_TEST(test_scheduler);
@@ -202,4 +452,11 @@ void run_sched_tests(void)
     RUN_TEST(test_sched_delayed_task);
     RUN_TEST(test_sched_alive_count);
     RUN_TEST(test_sched_run_forever);
+    RUN_TEST(test_defer_basic);
+    RUN_TEST(test_defer_rr_fairness);
+    RUN_TEST(test_rr_same_priority);
+    RUN_TEST(test_strict_priority_no_defer);
+    RUN_TEST(test_defer_rr_three_lower);
+    RUN_TEST(test_defer_state_lifecycle);
+    RUN_TEST(test_defer_then_suspend);
 }

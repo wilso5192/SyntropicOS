@@ -24,7 +24,10 @@ void syn_sched_init(SYN_Sched *sched, SYN_Task *tasks, size_t count)
 
     sched->tasks      = tasks;
     sched->task_count = count;
-    sched->rr_index   = 0;
+
+    for (size_t i = 0; i < SYN_SCHED_PRIO_LEVELS; i++) {
+        sched->rr_per_prio[i] = 0;
+    }
 }
 
 void syn_task_create(SYN_Task *task,
@@ -35,6 +38,7 @@ void syn_task_create(SYN_Task *task,
 {
     SYN_ASSERT(task != NULL);
     SYN_ASSERT(func != NULL);
+    SYN_ASSERT(priority < SYN_SCHED_PRIO_LEVELS);
 
     PT_INIT(&task->pt);
     task->func        = func;
@@ -57,7 +61,7 @@ static void sched_run_task(SYN_Task *task)
     if (status == PT_EXITED || status == PT_ENDED) {
         task->state = (uint8_t)SYN_TASK_DEAD;
     }
-    /* PT_YIELDED and PT_WAITING: task stays READY */
+    /* PT_YIELDED and PT_WAITING: task stays in its current state */
 }
 
 /* ── Scheduler tick ─────────────────────────────────────────────────────── */
@@ -66,7 +70,9 @@ bool syn_sched_run(SYN_Sched *sched)
 {
     SYN_ASSERT(sched != NULL);
 
-    if (sched->task_count == 0) {
+    const size_t n = sched->task_count;
+
+    if (n == 0) {
         return false;
     }
 
@@ -74,21 +80,23 @@ bool syn_sched_run(SYN_Sched *sched)
     bool any_alive = false;
 
     /*
-     * Priority scan: iterate all tasks starting from rr_index.
-     * Find the ready task with the highest priority (lowest value).
-     * Round-robin fairness among equal-priority tasks is achieved by
-     * starting the search at rr_index.
+     * Single-pass priority scan with per-priority round-robin.
+     *
+     * For each ready task, compute its rotation distance from
+     * rr_per_prio[priority]. The ready task at the best (lowest)
+     * priority with the smallest rotation distance wins.
+     *
+     * Rotation distance = how far this task's index is ahead of the
+     * priority's round-robin start, wrapping at task_count. This is
+     * pure integer arithmetic — no extra data structures.
      */
-    size_t start = sched->rr_index;
-    
     SYN_Task *best_task = NULL;
-    size_t best_idx = 0;
-    uint8_t best_prio = 255;
+    size_t    best_idx  = 0;
+    uint8_t   best_prio = 255;
+    size_t    best_dist = n;   /* Larger than any valid distance */
 
-    for (size_t i = 0; i < sched->task_count; i++) {
-        size_t idx = start + i;
-        if (idx >= sched->task_count) idx -= sched->task_count;
-        SYN_Task *task = &sched->tasks[idx];
+    for (size_t i = 0; i < n; i++) {
+        SYN_Task *task = &sched->tasks[i];
 
         if (task->state == (uint8_t)SYN_TASK_DEAD) {
             continue;
@@ -96,31 +104,54 @@ bool syn_sched_run(SYN_Sched *sched)
 
         any_alive = true;
 
-        if (task->state == (uint8_t)SYN_TASK_SUSPENDED) {
+        if (task->state == (uint8_t)SYN_TASK_SUSPENDED ||
+            task->state == (uint8_t)SYN_TASK_DEFERRED) {
             continue;
         }
 
-        /* Use signed arithmetic to handle timer wraparound safely */
+        /* Delay check — signed arithmetic for wraparound safety */
         if (task->delay_until != 0 && (int32_t)(now - task->delay_until) < 0) {
-            continue;  /* still waiting */
+            continue;
         }
 
-        /* Task is READY */
-        if (task->priority < best_prio) {
-            best_prio = task->priority;
+        /* Task is ready — compute rotation distance for its priority */
+        const uint8_t prio = task->priority;
+        size_t rr_start = sched->rr_per_prio[prio];
+        if (rr_start >= n) { rr_start = 0; } /* Defensive clamp */
+
+        const size_t dist = (i >= rr_start)
+                          ? (i - rr_start)
+                          : (n - rr_start + i);
+
+        if (prio < best_prio ||
+            (prio == best_prio && dist < best_dist)) {
+            best_prio = prio;
+            best_dist = dist;
             best_task = task;
-            best_idx = idx;
+            best_idx  = i;
         }
     }
 
     if (best_task != NULL) {
         sched_run_task(best_task);
-        size_t next_rr = best_idx + 1;
-        sched->rr_index = (next_rr >= sched->task_count) ? 0 : next_rr;
-    } else {
-        /* Advance round-robin index even if no task ran */
-        size_t next_rr = start + 1;
-        sched->rr_index = (next_rr >= sched->task_count) ? 0 : next_rr;
+
+        /* Advance this priority's round-robin index — unless the task
+         * deferred, in which case it didn't do useful work and shouldn't
+         * consume the rotation slot. */
+        if (best_task->state != (uint8_t)SYN_TASK_DEFERRED) {
+            const size_t next = best_idx + 1;
+            sched->rr_per_prio[best_prio] = (next >= n) ? 0 : next;
+        }
+    }
+
+    /* Clear previously-DEFERRED tasks back to READY.  The task that just
+     * ran (and possibly deferred THIS pass) is excluded so it stays
+     * DEFERRED through the next pass where it will actually be skipped. */
+    for (size_t i = 0; i < n; i++) {
+        if (sched->tasks[i].state == (uint8_t)SYN_TASK_DEFERRED &&
+            &sched->tasks[i] != best_task) {
+            sched->tasks[i].state = (uint8_t)SYN_TASK_READY;
+        }
     }
 
     return any_alive;

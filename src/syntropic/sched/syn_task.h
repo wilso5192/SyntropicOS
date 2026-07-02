@@ -27,6 +27,7 @@ typedef enum {
     SYN_TASK_READY     = 0,  /**< Eligible to run on next scheduler tick */
     SYN_TASK_SUSPENDED = 1,  /**< Paused — skipped by scheduler          */
     SYN_TASK_DEAD      = 2,  /**< Exited — will not run again            */
+    SYN_TASK_DEFERRED   = 3,  /**< Deferred — skipped for one pass       */
 } SYN_TaskState;
 
 /* ── Forward declaration ────────────────────────────────────────────────── */

@@ -25,6 +25,7 @@ Protothreads are stackless cooperative coroutines implemented via the Duff's dev
 | `PT_SPAWN(pt, child, func)` | Run a child protothread and block until it exits |
 | `PT_DELAY_MS(pt, target, ms)` | Non-blocking delay (needs a `uint32_t*` for deadline storage) |
 | `PT_TASK_DELAY_MS(pt, task, ms)` | Convenience form using `task->delay_until` |
+| `PT_DEFER(pt, task)` | Defer to all ready tasks regardless of priority (one pass) |
 
 ### Writing Tasks: Rules and Gotchas
 
@@ -167,7 +168,7 @@ static SYN_PT_Status my_task(SYN_PT *pt, SYN_Task *task)
 | Task | `sched/syn_task.h` | `SYN_USE_SCHED` |
 | Scheduler | `sched/syn_sched.h` | `SYN_USE_SCHED` |
 
-The scheduler manages a caller-owned array of `SYN_Task` descriptors. Each call to `syn_sched_run()` selects and runs the **single highest-priority ready task** (0 = highest priority), with **round-robin** among equal-priority tasks.
+The scheduler manages a caller-owned array of `SYN_Task` descriptors. Each call to `syn_sched_run()` selects and runs the **single highest-priority ready task** (0 = highest priority), with **per-priority round-robin** among equal-priority tasks.
 
 ```c
 static SYN_Task tasks[3];
@@ -180,6 +181,55 @@ syn_task_create(&tasks[2], "monitor", monitor_fn, 2, NULL);
 syn_sched_init(&sched, tasks, 3);
 syn_sched_run_forever(&sched);  // never returns
 ```
+
+### Priority and Round-Robin
+
+The scheduler uses **strict priority** — the highest-priority ready task always runs first. Within a priority level, tasks rotate in **round-robin** order. Each priority level maintains its own independent rotation index, ensuring fair rotation even when tasks at different priorities interact.
+
+The maximum number of priority levels defaults to 8 (priority 0–7) and is configurable:
+
+```c
+// syn_config.h
+#define SYN_SCHED_PRIO_LEVELS 8  // default, increase if needed
+```
+
+### Deferring (`PT_DEFER`)
+
+Strict priority can cause **starvation**: a high-priority task that yields (`PT_YIELD`) remains immediately eligible, so lower-priority tasks never run. `PT_DEFER` solves this:
+
+```c
+static SYN_PT_Status comms_task(SYN_PT *pt, SYN_Task *task)
+{
+    PT_BEGIN(pt);
+    for (;;) {
+        if (has_data()) {
+            process_data();
+            PT_YIELD(pt);           // Stay at this priority
+        } else {
+            PT_DEFER(pt, task);     // No work — let lower priorities run
+        }
+    }
+    PT_END(pt);
+}
+```
+
+| Macro | Behavior | Use when |
+|---|---|---|
+| `PT_YIELD(pt)` | Yields to same-priority round-robin only | Task has more work soon |
+| `PT_DEFER(pt, task)` | Skipped for one scheduler pass, any priority can run | Task has no immediate work |
+| `PT_TASK_DELAY_MS(pt, task, ms)` | Blocked until deadline | Task needs a timed wait |
+
+!!! note "Defer Limitation"
+    `PT_DEFER` is per-task. If **multiple** tasks at the same high priority all defer, they alternate deferring — one is always ready, so lower priorities may still starve. The proper solution for this pattern is event-driven wakeups (future work). For the common case of a **single** high-priority task deferring, `PT_DEFER` works correctly.
+
+**Task states:**
+
+| State | Value | Description |
+|---|---|---|
+| `SYN_TASK_READY` | 0 | Eligible to run |
+| `SYN_TASK_SUSPENDED` | 1 | Skipped until resumed |
+| `SYN_TASK_DEAD` | 2 | Exited, will not run again |
+| `SYN_TASK_DEFERRED` | 3 | Skipped for one pass, then cleared to READY |
 
 **Task control:**
 
