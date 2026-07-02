@@ -12,6 +12,7 @@
 #include "syn_sched.h"
 #include "../port/syn_port_system.h"
 #include "../util/syn_assert.h"
+#include "../util/syn_event.h"
 
 #include <limits.h>
 
@@ -47,6 +48,8 @@ void syn_task_create(SYN_Task *task,
     task->state       = (uint8_t)SYN_TASK_READY;
     task->delay_until = 0;
     task->user_data   = user_data;
+    task->wait_event  = NULL;
+    task->wait_mask   = 0;
 }
 
 
@@ -107,6 +110,19 @@ bool syn_sched_run(SYN_Sched *sched)
         if (task->state == (uint8_t)SYN_TASK_SUSPENDED ||
             task->state == (uint8_t)SYN_TASK_DEFERRED) {
             continue;
+        }
+
+        /* Blocked on event — check if the event has fired */
+        if (task->state == (uint8_t)SYN_TASK_BLOCKED) {
+            if (task->wait_event != NULL &&
+                (task->wait_event->flags & task->wait_mask)) {
+                /* Event fired — transition to READY */
+                task->wait_event = NULL;
+                task->state = (uint8_t)SYN_TASK_READY;
+                /* Fall through to normal priority evaluation */
+            } else {
+                continue;  /* Still blocked */
+            }
         }
 
         /* Delay check — signed arithmetic for wraparound safety */
@@ -177,8 +193,9 @@ uint32_t syn_sched_next_wakeup(const SYN_Sched *sched)
     for (size_t i = 0; i < sched->task_count; i++) {
         const SYN_Task *task = &sched->tasks[i];
 
-        if (task->state == (uint8_t)SYN_TASK_DEAD ||
-            task->state == (uint8_t)SYN_TASK_SUSPENDED) {
+        if (task->state == (uint8_t)SYN_TASK_DEAD    ||
+            task->state == (uint8_t)SYN_TASK_SUSPENDED ||
+            task->state == (uint8_t)SYN_TASK_BLOCKED) {
             continue;
         }
 

@@ -7,6 +7,7 @@
 #include "mocks/mock_port.h"
 #include "syntropic/syntropic.h"
 #include "syntropic/sched/syn_sched.h"
+#include "syntropic/util/syn_event.h"
 
 static int sched_order[10];
 static int sched_order_idx = 0;
@@ -444,6 +445,228 @@ static void test_defer_then_suspend(void)
     TEST_ASSERT_EQUAL_UINT8(SYN_TASK_READY, tasks[0].state);
 }
 
+/* ── PT_BLOCK_EVENT tests ────────────────────────────────────────────────── */
+
+#define EVT_DATA  SYN_BIT(0)
+#define EVT_DONE  SYN_BIT(1)
+
+static int block_counter;
+
+/* Task that blocks on an event, increments counter when woken */
+static SYN_PT_Status block_task_fn(SYN_PT *pt, SYN_Task *task)
+{
+    SYN_EventGroup *evt = (SYN_EventGroup *)task->user_data;
+    PT_BEGIN(pt);
+    for (;;) {
+        PT_BLOCK_EVENT(pt, task, evt, EVT_DATA);
+        block_counter++;
+    }
+    PT_END(pt);
+}
+
+/**
+ * Basic: task blocks, event set, task wakes and runs.
+ */
+static void test_block_event_basic(void)
+{
+    mock_tick_ms = 0;
+    block_counter = 0;
+
+    SYN_EventGroup evt;
+    syn_event_init(&evt);
+
+    SYN_Task tasks[1];
+    SYN_Sched sched;
+    syn_task_create(&tasks[0], "blk", block_task_fn, 0, &evt);
+    syn_sched_init(&sched, tasks, 1);
+
+    /* Pass 1: task runs, hits PT_BLOCK_EVENT, goes BLOCKED */
+    syn_sched_run(&sched);
+    TEST_ASSERT_EQUAL_UINT8(SYN_TASK_BLOCKED, tasks[0].state);
+    TEST_ASSERT_EQUAL_INT(0, block_counter);
+
+    /* Pass 2: no event — task stays blocked */
+    syn_sched_run(&sched);
+    TEST_ASSERT_EQUAL_UINT8(SYN_TASK_BLOCKED, tasks[0].state);
+    TEST_ASSERT_EQUAL_INT(0, block_counter);
+
+    /* Set event flag */
+    syn_event_set(&evt, EVT_DATA);
+
+    /* Pass 3: scheduler sees event, wakes task, task increments counter */
+    syn_sched_run(&sched);
+    TEST_ASSERT_EQUAL_INT(1, block_counter);
+
+    /* Flag should be auto-cleared */
+    TEST_ASSERT_FALSE(syn_event_check_any(&evt, EVT_DATA));
+}
+
+/**
+ * Blocked task is skipped — lower-priority task runs.
+ */
+static void test_block_event_skips_scan(void)
+{
+    mock_tick_ms = 0;
+    log_reset();
+    block_counter = 0;
+
+    SYN_EventGroup evt;
+    syn_event_init(&evt);
+
+    SYN_Task tasks[2];
+    SYN_Sched sched;
+    static int id_b = 2;
+
+    syn_task_create(&tasks[0], "blk", block_task_fn, 0, &evt);
+    syn_task_create(&tasks[1], "low", yield_task, 1, &id_b);
+    syn_sched_init(&sched, tasks, 2);
+
+    /* Pass 1: high-pri task runs, blocks */
+    syn_sched_run(&sched);
+    TEST_ASSERT_EQUAL_UINT8(SYN_TASK_BLOCKED, tasks[0].state);
+
+    /* Pass 2: high-pri blocked, low-pri runs */
+    syn_sched_run(&sched);
+    TEST_ASSERT_EQUAL_INT(2, run_log[0]);  /* Low-pri ran */
+    TEST_ASSERT_EQUAL_INT(0, block_counter);  /* High-pri didn't */
+}
+
+/**
+ * Auto-clear: matched event flags are cleared after task resumes.
+ */
+static void test_block_event_auto_clear(void)
+{
+    mock_tick_ms = 0;
+    block_counter = 0;
+
+    SYN_EventGroup evt;
+    syn_event_init(&evt);
+
+    SYN_Task tasks[1];
+    SYN_Sched sched;
+    syn_task_create(&tasks[0], "blk", block_task_fn, 0, &evt);
+    syn_sched_init(&sched, tasks, 1);
+
+    /* Block the task */
+    syn_sched_run(&sched);
+
+    /* Set both DATA and DONE flags */
+    syn_event_set(&evt, EVT_DATA | EVT_DONE);
+
+    /* Wake — task waits on EVT_DATA only */
+    syn_sched_run(&sched);
+
+    /* EVT_DATA should be cleared (auto-clear), EVT_DONE should remain */
+    TEST_ASSERT_FALSE(syn_event_check_any(&evt, EVT_DATA));
+    TEST_ASSERT_TRUE(syn_event_check_any(&evt, EVT_DONE));
+}
+
+/**
+ * Priority interaction: blocked high-pri task wakes and preempts.
+ */
+static void test_block_event_priority(void)
+{
+    mock_tick_ms = 0;
+    log_reset();
+    block_counter = 0;
+
+    SYN_EventGroup evt;
+    syn_event_init(&evt);
+
+    SYN_Task tasks[2];
+    SYN_Sched sched;
+    static int id_b = 2;
+
+    syn_task_create(&tasks[0], "blk", block_task_fn, 0, &evt);
+    syn_task_create(&tasks[1], "low", yield_task, 1, &id_b);
+    syn_sched_init(&sched, tasks, 2);
+
+    /* Block high-pri */
+    syn_sched_run(&sched);
+    TEST_ASSERT_EQUAL_UINT8(SYN_TASK_BLOCKED, tasks[0].state);
+
+    /* Low-pri runs while high-pri is blocked */
+    syn_sched_run(&sched);
+    TEST_ASSERT_EQUAL_INT(2, run_log[0]);
+
+    /* Set event — high-pri should wake and run next */
+    syn_event_set(&evt, EVT_DATA);
+    log_reset();
+    syn_sched_run(&sched);
+    TEST_ASSERT_EQUAL_INT(1, block_counter);  /* High-pri ran */
+}
+
+/**
+ * Multiple tasks blocking on different events.
+ */
+static void test_block_event_multiple_tasks(void)
+{
+    mock_tick_ms = 0;
+    SYN_EventGroup evt_a, evt_b;
+    syn_event_init(&evt_a);
+    syn_event_init(&evt_b);
+
+    SYN_Task tasks[2];
+    SYN_Sched sched;
+
+    syn_task_create(&tasks[0], "a", block_task_fn, 0, &evt_a);
+    syn_task_create(&tasks[1], "b", block_task_fn, 0, &evt_b);
+    syn_sched_init(&sched, tasks, 2);
+
+    block_counter = 0;
+
+    /* Both tasks run once, then block */
+    syn_sched_run(&sched);  /* Task A blocks */
+    syn_sched_run(&sched);  /* Task B blocks */
+    TEST_ASSERT_EQUAL_UINT8(SYN_TASK_BLOCKED, tasks[0].state);
+    TEST_ASSERT_EQUAL_UINT8(SYN_TASK_BLOCKED, tasks[1].state);
+
+    /* Only fire event A */
+    syn_event_set(&evt_a, EVT_DATA);
+    syn_sched_run(&sched);
+    TEST_ASSERT_EQUAL_INT(1, block_counter);  /* Only A woke */
+    TEST_ASSERT_EQUAL_UINT8(SYN_TASK_BLOCKED, tasks[1].state);  /* B still blocked */
+
+    /* Fire event B */
+    syn_event_set(&evt_b, EVT_DATA);
+    syn_sched_run(&sched);
+    TEST_ASSERT_EQUAL_INT(2, block_counter);  /* Now B woke too */
+}
+
+/**
+ * Suspend overrides block: suspending a blocked task changes state.
+ */
+static void test_block_event_suspend(void)
+{
+    mock_tick_ms = 0;
+    block_counter = 0;
+
+    SYN_EventGroup evt;
+    syn_event_init(&evt);
+
+    SYN_Task tasks[1];
+    SYN_Sched sched;
+    syn_task_create(&tasks[0], "blk", block_task_fn, 0, &evt);
+    syn_sched_init(&sched, tasks, 1);
+
+    /* Block the task */
+    syn_sched_run(&sched);
+    TEST_ASSERT_EQUAL_UINT8(SYN_TASK_BLOCKED, tasks[0].state);
+
+    /* Suspend while blocked */
+    syn_task_suspend(&tasks[0]);
+    TEST_ASSERT_EQUAL_UINT8(SYN_TASK_SUSPENDED, tasks[0].state);
+
+    /* Set event — task should NOT wake (it's suspended) */
+    syn_event_set(&evt, EVT_DATA);
+    syn_sched_run(&sched);
+    TEST_ASSERT_EQUAL_INT(0, block_counter);
+
+    /* Resume — task goes to READY, not BLOCKED */
+    syn_task_resume(&tasks[0]);
+    TEST_ASSERT_EQUAL_UINT8(SYN_TASK_READY, tasks[0].state);
+}
+
 void run_sched_tests(void)
 {
     RUN_TEST(test_scheduler);
@@ -459,4 +682,10 @@ void run_sched_tests(void)
     RUN_TEST(test_defer_rr_three_lower);
     RUN_TEST(test_defer_state_lifecycle);
     RUN_TEST(test_defer_then_suspend);
+    RUN_TEST(test_block_event_basic);
+    RUN_TEST(test_block_event_skips_scan);
+    RUN_TEST(test_block_event_auto_clear);
+    RUN_TEST(test_block_event_priority);
+    RUN_TEST(test_block_event_multiple_tasks);
+    RUN_TEST(test_block_event_suspend);
 }

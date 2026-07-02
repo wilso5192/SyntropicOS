@@ -26,6 +26,7 @@ Protothreads are stackless cooperative coroutines implemented via the Duff's dev
 | `PT_DELAY_MS(pt, target, ms)` | Non-blocking delay (needs a `uint32_t*` for deadline storage) |
 | `PT_TASK_DELAY_MS(pt, task, ms)` | Convenience form using `task->delay_until` |
 | `PT_DEFER(pt, task)` | Defer to all ready tasks regardless of priority (one pass) |
+| `PT_BLOCK_EVENT(pt, task, grp, mask)` | Block until any event bit is set (true blocking, not polled) |
 
 ### Writing Tasks: Rules and Gotchas
 
@@ -217,10 +218,45 @@ static SYN_PT_Status comms_task(SYN_PT *pt, SYN_Task *task)
 |---|---|---|
 | `PT_YIELD(pt)` | Yields to same-priority round-robin only | Task has more work soon |
 | `PT_DEFER(pt, task)` | Skipped for one scheduler pass, any priority can run | Task has no immediate work |
+| `PT_BLOCK_EVENT(pt, task, grp, mask)` | Blocked until event fires, then auto-cleared | Task waits for external signal |
 | `PT_TASK_DELAY_MS(pt, task, ms)` | Blocked until deadline | Task needs a timed wait |
 
 !!! note "Defer Limitation"
-    `PT_DEFER` is per-task. If **multiple** tasks at the same high priority all defer, they alternate deferring — one is always ready, so lower priorities may still starve. The proper solution for this pattern is event-driven wakeups (future work). For the common case of a **single** high-priority task deferring, `PT_DEFER` works correctly.
+    `PT_DEFER` is per-task. If **multiple** tasks at the same high priority all defer, they alternate deferring — one is always ready, so lower priorities may still starve. Use `PT_BLOCK_EVENT` when a task is genuinely waiting for an external signal.
+
+### Blocking on Events (`PT_BLOCK_EVENT`)
+
+The existing `PT_WAIT_EVENT` uses cooperative polling — the task stays READY, runs every pass, checks its condition, and returns `PT_WAITING`. This wastes CPU and prevents tickless sleep.
+
+`PT_BLOCK_EVENT` sets the task state to `SYN_TASK_BLOCKED`. The scheduler **skips the task entirely** until the event fires, then transitions it back to READY:
+
+```c
+#define EVT_DATA_READY  SYN_BIT(0)
+
+static SYN_EventGroup uart_events;
+
+// ISR:
+void UART_IRQHandler(void) {
+    syn_event_set(&uart_events, EVT_DATA_READY);  // ISR-safe
+}
+
+// Task:
+static SYN_PT_Status uart_task(SYN_PT *pt, SYN_Task *task)
+{
+    PT_BEGIN(pt);
+    for (;;) {
+        PT_BLOCK_EVENT(pt, task, &uart_events, EVT_DATA_READY);
+        // Wakes here when EVT_DATA_READY is set (flag auto-cleared)
+        process_uart_data();
+    }
+    PT_END(pt);
+}
+```
+
+| Approach | Scheduling cost | Tickless-safe | Use case |
+|---|---|---|---|
+| `PT_WAIT_EVENT` | Polled every pass | No — prevents sleep | Legacy / simple cases |
+| `PT_BLOCK_EVENT` | Skipped entirely while blocked | Yes | Production event-driven code |
 
 **Task states:**
 
@@ -230,6 +266,7 @@ static SYN_PT_Status comms_task(SYN_PT *pt, SYN_Task *task)
 | `SYN_TASK_SUSPENDED` | 1 | Skipped until resumed |
 | `SYN_TASK_DEAD` | 2 | Exited, will not run again |
 | `SYN_TASK_DEFERRED` | 3 | Skipped for one pass, then cleared to READY |
+| `SYN_TASK_BLOCKED` | 4 | Waiting on event — skipped until event fires |
 
 **Task control:**
 

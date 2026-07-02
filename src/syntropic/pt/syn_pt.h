@@ -260,6 +260,34 @@ typedef enum {
         PT_YIELD(pt);                                          \
     } while (0)
 
+/**
+ * @brief Block until ANY bit in @p mask is set in the event group.
+ *
+ * Unlike PT_WAIT_EVENT (which polls every scheduler pass), this macro
+ * sets the task state to BLOCKED.  The scheduler skips the task
+ * entirely until the event fires, saving CPU and enabling proper
+ * tickless sleep.
+ *
+ * Matched flags are auto-cleared after the task resumes.
+ *
+ * @note The clear runs after PT_YIELD returns (i.e. after the scheduler
+ *       has already detected the flags during its scan), so it is safe
+ *       for the scheduler to use the flags as a wakeup condition.
+ *
+ * @param pt    Protothread.
+ * @param task  Pointer to the SYN_Task struct.
+ * @param grp   Pointer to SYN_EventGroup.
+ * @param mask  Bitmask of event flags to wait for (any of them).
+ */
+#define PT_BLOCK_EVENT(pt, task, grp, mask)                    \
+    do {                                                       \
+        (task)->wait_event = (struct SYN_EventGroup *)(grp);   \
+        (task)->wait_mask  = (mask);                            \
+        (task)->state = (uint8_t)4; /* SYN_TASK_BLOCKED */     \
+        PT_YIELD(pt);                                          \
+        (grp)->flags &= ~(mask);  /* Auto-clear matched */    \
+    } while (0)
+
 /* ── Query macros ───────────────────────────────────────────────────────── */
 
 /** Check if a protothread is still running (has not exited). */

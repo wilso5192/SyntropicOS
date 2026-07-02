@@ -44,7 +44,7 @@ extern "C" {
 /**
  * @brief Event flag group — a 32-bit bitmask of event flags.
  */
-typedef struct {
+typedef struct SYN_EventGroup {
     volatile uint32_t flags;   /**< Bitmask of active event flags         */
 } SYN_EventGroup;
 
