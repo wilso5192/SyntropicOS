@@ -83,6 +83,7 @@ typedef struct {
     uint32_t     sync_interval_s;   /**< Re-sync interval in seconds        */
 
     bool         synced;            /**< true after first successful sync   */
+    uint32_t     recv_deadline;     /**< Tick deadline for non-blocking recv */
 } SYN_SNTP;
 
 /* ── API ────────────────────────────────────────────────────────────────── */
