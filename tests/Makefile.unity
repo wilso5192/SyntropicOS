@@ -25,6 +25,7 @@ SYN_SRCS := \
 	src/syntropic/output/syn_led.c src/syntropic/output/syn_soft_pwm.c \
 	src/syntropic/dsp/syn_filter.c src/syntropic/dsp/syn_signal.c \
 	src/syntropic/control/syn_pid.c src/syntropic/control/syn_autotune.c \
+	src/syntropic/control/syn_control_stats.c \
 	src/syntropic/motor/syn_stepper.c src/syntropic/motor/syn_servo.c \
 	src/syntropic/motor/syn_dc_motor.c src/syntropic/motor/syn_motor_ctrl.c \
 	src/syntropic/motor/syn_actuator.c \

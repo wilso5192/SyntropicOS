@@ -14,7 +14,6 @@ void syn_control_stats_update(SYN_ControlStats *stats, int32_t error, int32_t ou
     SYN_ASSERT(stats != NULL);
 
     int32_t abs_err = (error < 0) ? -error : error;
-    int32_t abs_out = (output < 0) ? -output : output;
     
     /* Accumulate error stats */
     stats->sum_sq_err += (int64_t)error * error;

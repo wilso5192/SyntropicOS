@@ -115,6 +115,7 @@ void run_multicore_tests(void);
 void run_crypto_tests(void);
 void run_wg_tests(void);
 void run_sntp_tests(void);
+void run_control_stats_tests(void);
 
 /* ── Main ───────────────────────────────────────────────────────────────── */
 
@@ -252,6 +253,9 @@ int main(void)
 
     /* Networking */
     run_sntp_tests();
+
+    /* Control */
+    run_control_stats_tests();
 
     return UNITY_END();
 }
