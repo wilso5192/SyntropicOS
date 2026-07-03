@@ -88,6 +88,12 @@
 #define SYN_USE_FSM            1   /**< Table-driven finite state machine   */
 #define SYN_USE_AO             1   /**< Active Object (requires: FSM)       */
 
+/* ── Cryptography ───────────────────────────────────────────────────────── */
+
+#define SYN_USE_BLAKE2S           1   /**< BLAKE2s hash + keyed MAC (RFC 7693) */
+#define SYN_USE_CHACHA20POLY1305  1   /**< ChaCha20-Poly1305 AEAD (RFC 8439)  */
+#define SYN_USE_X25519            1   /**< X25519 Diffie-Hellman (RFC 7748)   */
+
 /* ── Communication / Protocols ──────────────────────────────────────────── */
 
 #define SYN_USE_COBS           1   /**< COBS packet framing                 */
@@ -100,6 +106,9 @@
 #define SYN_USE_DNS            1   /**< DNS resolver                        */
 #define SYN_USE_ROUTER         1   /**< Network router / dispatcher         */
 #define SYN_USE_HEARTBEAT      1   /**< Heartbeat / keep-alive service      */
+#define SYN_USE_SNTP           1   /**< SNTP time synchronization client    */
+#define SYN_USE_WG             1   /**< WireGuard VPN client (requires: BLAKE2S, CHACHA20POLY1305, X25519, SNTP) */
+#define SYN_WG_MTU          1420   /**< WireGuard tunnel MTU (inner payload) */
 #define SYN_USE_TRANSPORT_TCP  1   /**< TCP transport layer                 */
 
 /* ── Sensor ─────────────────────────────────────────────────────────────── */

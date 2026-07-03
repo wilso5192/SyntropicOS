@@ -50,7 +50,7 @@ plugins:
             GENERATE_LATEX: "NO"
             OPTIMIZE_OUTPUT_FOR_C: "YES"
             TYPEDEF_HIDES_STRUCT: "YES"
-            PREDEFINED: "SYN_USE_CAN=1 SYN_USE_EXTI=1 SYN_USE_ONEWIRE=1 SYN_LOG_COLOR=1 SYN_USE_SHA256=1 SYN_USE_POOL=1 SYN_USE_COREDUMP=1 SYN_COREDUMP_FLASH_ADDR=0"
+            PREDEFINED: "SYN_USE_CAN=1 SYN_USE_EXTI=1 SYN_USE_ONEWIRE=1 SYN_LOG_COLOR=1 SYN_USE_SHA256=1 SYN_USE_POOL=1 SYN_USE_COREDUMP=1 SYN_COREDUMP_FLASH_ADDR=0 SYN_USE_BLAKE2S=1 SYN_USE_CHACHA20POLY1305=1 SYN_USE_X25519=1 SYN_USE_SNTP=1 SYN_USE_WG=1"
 
 markdown_extensions:
   - admonition
@@ -81,6 +81,7 @@ nav:
     - Control & Motor: modules/control.md
     - DSP & Filters: modules/dsp.md
     - Communication: modules/communication.md
+    - Crypto & VPN: modules/crypto.md
     - Storage: modules/storage.md
     - System: modules/system.md
     - Debug: modules/debug.md

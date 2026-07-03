@@ -112,6 +112,8 @@ void run_spi_async_tests(void);
 void run_fwupdate_hmac_tests(void);
 void run_timer_expiry_tests(void);
 void run_multicore_tests(void);
+void run_crypto_tests(void);
+void run_wg_tests(void);
 
 /* ── Main ───────────────────────────────────────────────────────────────── */
 
@@ -242,6 +244,10 @@ int main(void)
 
     /* Multicore (AMP) */
     run_multicore_tests();
+
+    /* Crypto & WireGuard */
+    run_crypto_tests();
+    run_wg_tests();
 
     return UNITY_END();
 }

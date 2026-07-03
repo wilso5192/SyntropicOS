@@ -136,4 +136,55 @@ This generates a `.su` text file for each compiled source file. You can find the
 find . -name "*.su" -exec cat {} + | grep "src/syntropic/" | sort -n -k 2 -r | head -n 20
 ```
 
+### 5. Static Analysis (cppcheck)
 
+cppcheck runs over all `src/syntropic/` sources with warning, style, performance, and portability checks enabled:
+
+```bash
+make -f tests/Makefile.check check
+```
+
+For exhaustive branch analysis of specific modules:
+
+```bash
+cppcheck --check-level=exhaustive --enable=all --std=c99 --force \
+    --library=tests/cppcheck_syntropic.cfg \
+    --suppress=missingIncludeSystem -I src \
+    src/syntropic/crypto/ src/syntropic/net/syn_wg.c
+```
+
+### 6. GCC Static Analyzer
+
+GCC's `-fanalyzer` performs interprocedural path-sensitive analysis to detect use-after-free, double-free, null dereference, and buffer overflow:
+
+```bash
+gcc -std=c99 -Wall -Wextra -Wpedantic -Werror -fanalyzer \
+    -fsyntax-only -I src src/syntropic/crypto/*.c src/syntropic/net/syn_wg.c
+```
+
+## Crypto & WireGuard Test Coverage
+
+The cryptographic and networking stack has dedicated Unity test suites with known-answer vectors verified against Go and Python reference implementations.
+
+| Test File | Module | Tests | Vectors/Technique |
+|---|---|---|---|
+| `test_crypto.c` | BLAKE2s | 12 | RFC 7693 vectors, multi-block, streaming, keyed MAC, HMAC |
+| `test_crypto.c` | ChaCha20-Poly1305 | 10 | RFC 8439 vectors, tamper detection (ct/tag/AAD), round-trip |
+| `test_crypto.c` | X25519 | 7 | RFC 7748 vectors, clamp, shared secret symmetry, low-order |
+| `test_wg.c` | WireGuard internals | 17 | HKDF, Noise helpers, MAC1, anti-replay window, full handshake vs Go |
+
+!!! note "Reference vectors"
+    The expected intermediate values for the Noise_IKpsk2 handshake (construction hash, chaining key, encrypted static, encrypted timestamp) were generated with Go's `golang.org/x/crypto` and are embedded as hex literals in `test_wg_handshake_intermediates`. All 9 intermediate values are verified step-by-step.
+
+### Integration Test
+
+A standalone integration test verifies a live WireGuard handshake and ICMP ping through a real tunnel:
+
+```bash
+gcc -std=c99 -O2 -I src -o test_wg_integration \
+    tests/test_wg_integration.c \
+    src/syntropic/crypto/syn_blake2s.c \
+    src/syntropic/crypto/syn_chacha20poly1305.c \
+    src/syntropic/crypto/syn_x25519.c
+./test_wg_integration
+```

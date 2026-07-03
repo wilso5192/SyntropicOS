@@ -60,6 +60,11 @@ set(SYN_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/syntropic/util/syn_pubsub.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/syntropic/util/syn_sha256.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/syntropic/system/syn_coredump.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/syntropic/crypto/syn_blake2s.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/syntropic/crypto/syn_chacha20poly1305.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/syntropic/crypto/syn_x25519.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/syntropic/net/syn_sntp.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/syntropic/net/syn_wg.c
 )
 
 # Optional: weak stubs (link these so unimplemented port functions assert

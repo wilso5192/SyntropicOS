@@ -75,3 +75,11 @@ coverage_html/
 *.gcov
 coverage.info
 coverage_html/
+
+# Standalone test/debug binaries
+test_unity
+test_blake2s_exact
+test_wg_handshake
+test_wg_integration
+test_crypto
+wg_keygen

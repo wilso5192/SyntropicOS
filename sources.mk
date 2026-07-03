@@ -66,7 +66,12 @@ SYN_SRCS := \
 	$(SYN_DIR)/src/syntropic/util/syn_scurve.c \
 	$(SYN_DIR)/src/syntropic/util/syn_pubsub.c \
 	$(SYN_DIR)/src/syntropic/util/syn_sha256.c \
-	$(SYN_DIR)/src/syntropic/system/syn_coredump.c
+	$(SYN_DIR)/src/syntropic/system/syn_coredump.c \
+	$(SYN_DIR)/src/syntropic/crypto/syn_blake2s.c \
+	$(SYN_DIR)/src/syntropic/crypto/syn_chacha20poly1305.c \
+	$(SYN_DIR)/src/syntropic/crypto/syn_x25519.c \
+	$(SYN_DIR)/src/syntropic/net/syn_sntp.c \
+	$(SYN_DIR)/src/syntropic/net/syn_wg.c
 
 SYN_STUB_SRCS := \
 	$(SYN_DIR)/src/syntropic/port_stubs/syn_port_stubs.c

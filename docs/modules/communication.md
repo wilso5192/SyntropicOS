@@ -33,3 +33,30 @@ All network modules are cooperative — they yield between operations so other s
 | TCP Transport | `net/syn_transport_tcp.h` | `SYN_USE_TRANSPORT_TCP` | TCP socket transport implementation |
 | Router | `net/syn_router.h` | `SYN_USE_ROUTER` | Software packet router / transport dispatcher |
 | Heartbeat | `net/syn_heartbeat.h` | `SYN_USE_HEARTBEAT` | Peer discovery and keep-alive monitor |
+
+### Network Services
+
+| Module | Header | Config | Description |
+|---|---|---|---|
+| SNTP | `net/syn_sntp.h` | `SYN_USE_SNTP` | SNTPv4 client — single-query time sync with retry and periodic re-sync |
+
+The SNTP client is a cooperative protothread task that syncs to a configurable NTP server.
+Provides Unix-epoch timestamps with nanosecond sub-second resolution.
+
+```c
+#include "syntropic/net/syn_sntp.h"
+
+static SYN_SNTP sntp;
+SYN_SockAddr ntp_server = { .ip = SYN_IP4(216,239,35,0), .port = 123 };
+
+syn_sntp_init(&sntp, &ntp_server, 3600);  /* re-sync every hour */
+
+/* Register as a scheduler task */
+syn_task_create(&tasks[0], "sntp", syn_sntp_task, 0, &sntp);
+
+/* Read current time */
+uint32_t epoch = syn_sntp_get_epoch_s(&sntp);
+uint32_t ns    = syn_sntp_get_epoch_ns(&sntp);
+```
+
+Used as a prerequisite by the [WireGuard VPN client](crypto.md#wireguard-vpn-client) for TAI64N handshake timestamps.

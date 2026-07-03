@@ -328,6 +328,20 @@ extern "C" {
   #include "util/syn_hmac.h"
 #endif
 
+/* ── Cryptography (conditional) ─────────────────────────────────────────── */
+
+#if !defined(SYN_USE_BLAKE2S) || SYN_USE_BLAKE2S
+  #include "crypto/syn_blake2s.h"
+#endif
+
+#if !defined(SYN_USE_CHACHA20POLY1305) || SYN_USE_CHACHA20POLY1305
+  #include "crypto/syn_chacha20poly1305.h"
+#endif
+
+#if !defined(SYN_USE_X25519) || SYN_USE_X25519
+  #include "crypto/syn_x25519.h"
+#endif
+
 #if !defined(SYN_USE_POOL) || SYN_USE_POOL
   #include "util/syn_pool.h"
 #endif
@@ -373,6 +387,14 @@ extern "C" {
 
 #if !defined(SYN_USE_HEARTBEAT) || SYN_USE_HEARTBEAT
   #include "net/syn_heartbeat.h"
+#endif
+
+#if !defined(SYN_USE_SNTP) || SYN_USE_SNTP
+  #include "net/syn_sntp.h"
+#endif
+
+#if !defined(SYN_USE_WG) || SYN_USE_WG
+  #include "net/syn_wg.h"
 #endif
 
 #ifdef __cplusplus
