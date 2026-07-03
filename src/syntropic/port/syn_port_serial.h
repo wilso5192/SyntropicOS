@@ -14,7 +14,7 @@
  * - `read` is strictly **non-blocking**: returns 0 if nothing is available.
  *
  * @par Peripheral UARTs
- * For non-console UARTs (Modbus, GPS, sensors), use @ref syn_port_uart.h
+ * For non-console UARTs (Modbus, GPS, sensors), use syn_port_uart.h
  * which provides instance-based access to hardware UART peripherals.
  *
  * @ingroup syn_system

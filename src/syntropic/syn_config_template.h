@@ -17,9 +17,10 @@
 /* ── Drivers ────────────────────────────────────────────────────────────── */
 
 #define SYN_USE_GPIO           1   /**< GPIO pin control                    */
-#define SYN_USE_UART           1   /**< Buffered UART with ISR feed         */
+#define SYN_USE_UART           1   /**< Peripheral UARTs (Modbus, GPS, etc) */
 #define SYN_USE_ADC            1   /**< ADC with oversampling + calibration */
 #define SYN_USE_EXTI           1   /**< GPIO interrupt dispatcher           */
+/* Console serial (syn_port_serial) is always available — used by CLI/log.  */
 /* I2C/SPI device helpers are header-only — always available.               */
 
 /* ── UART tuning ────────────────────────────────────────────────────────── */

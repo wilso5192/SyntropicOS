@@ -114,6 +114,7 @@ void run_timer_expiry_tests(void);
 void run_multicore_tests(void);
 void run_crypto_tests(void);
 void run_wg_tests(void);
+void run_sntp_tests(void);
 
 /* ── Main ───────────────────────────────────────────────────────────────── */
 
@@ -248,6 +249,9 @@ int main(void)
     /* Crypto & WireGuard */
     run_crypto_tests();
     run_wg_tests();
+
+    /* Networking */
+    run_sntp_tests();
 
     return UNITY_END();
 }
