@@ -143,17 +143,8 @@ static const SYN_CLI_Command commands[] = {
 
 /* ── Callbacks ──────────────────────────────────────────────────────────── */
 
-/** Called by SYN_CLI to emit a single character to the serial port */
-static void cli_putchar(char ch)
-{
-    syn_port_uart_transmit_byte(0, (uint8_t)ch);
-}
-
-/** Called by SYN_LOG to write a formatted log string */
-static void log_output(const char *str, size_t len)
-{
-    syn_port_uart_transmit(0, (const uint8_t *)str, len, 100);
-}
+/* CLI and log output goes directly through syn_port_serial_write.
+ * No callback glue needed. */
 
 /** Called when a SYN_ASSERT fails — spin forever (or trigger a watchdog) */
 void syn_assert_failed(const char *file, int line)
@@ -228,7 +219,7 @@ void setup(void)
     syn_led_blink(&status_led, 500, 500);  /* Start with a slow heartbeat */
 
     /* 3. Initialize structured logging over serial */
-    syn_log_init(log_output, SYN_LOG_INFO);
+    syn_log_init(SYN_LOG_INFO);
     SYN_LOG_I(TAG, "boot");
     extern uint32_t SystemCoreClock;
     SYN_LOG_I(TAG, "clock: %lu", SystemCoreClock);
@@ -236,7 +227,7 @@ void setup(void)
     /* 4. Initialize the interactive CLI */
     syn_cli_init(&cli, commands,
                  sizeof(commands) / sizeof(commands[0]),
-                 cli_putchar, "> ");
+                 "> ");
     syn_cli_set_scheduler(&sched);
     syn_cli_printf(&cli, "\r\n--- SyntropicOS (STM32) ---\r\n");
     syn_cli_print_prompt(&cli);

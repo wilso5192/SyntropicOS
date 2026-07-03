@@ -14,29 +14,17 @@
 #include <string.h>
 
 /* ── Shared output capture ─────────────────────────────────────────────── */
+/* CLI now writes directly to syn_port_serial_write, which is mocked
+ * by mock_port.c into mock_serial_tx_buf. These macros alias the mock
+ * state so existing test assertions continue to work unchanged. */
 
-static char cli_output_buf[4096];
-static size_t cli_output_pos = 0;
-
-static void cli_test_putchar(char ch)
-{
-    if (cli_output_pos < sizeof(cli_output_buf) - 1) {
-        cli_output_buf[cli_output_pos++] = ch;
-        cli_output_buf[cli_output_pos] = '\0';
-    }
-}
-
-static void cli_test_puts(const char *str)
-{
-    while (str && *str) {
-        cli_test_putchar(*str++);
-    }
-}
+#define cli_output_buf  ((char *)mock_serial_tx_buf)
+#define cli_output_pos  mock_serial_tx_len
 
 static void clear_output(void)
 {
-    cli_output_pos = 0;
-    cli_output_buf[0] = '\0';
+    mock_serial_tx_len = 0;
+    mock_serial_tx_buf[0] = '\0';
 }
 
 /* ── Command handlers ───────────────────────────────────────────────────── */
@@ -80,7 +68,7 @@ static const SYN_CLI_Command test_commands[] = {
 static void test_cli_basic(void)
 {
     SYN_CLI cli;
-    syn_cli_init(&cli, test_commands, 4, cli_test_putchar, "> ");
+    syn_cli_init(&cli, test_commands, 4, "> ");
 
     /* led command */
     led_handler_called = 0;
@@ -109,19 +97,18 @@ static void test_cli_basic(void)
     TEST_ASSERT_NOT_NULL(strstr(cli_output_buf, "Available commands"));
 }
 
-/* ── Test: puts_fn shortcut path ──────────────────────────────────────── */
+/* ── Test: string output via serial port ─────────────────────────────── */
 
 static void test_cli_puts_fn(void)
 {
     SYN_CLI cli;
-    syn_cli_init(&cli, test_commands, 4, cli_test_putchar, "> ");
+    syn_cli_init(&cli, test_commands, 4, "> ");
 
-    /* Set a puts_fn — this exercises the fast path in cli_puts */
-    syn_cli_set_puts(&cli, cli_test_puts);
-
+    /* CLI now writes directly to syn_port_serial_write.
+     * Verify output works for both command dispatch and error paths. */
     clear_output();
     syn_cli_process_line(&cli, "led on");
-    /* Just verifying no crash; the fast-path puts_fn was exercised */
+    /* Just verifying no crash; serial output was exercised */
 
     clear_output();
     syn_cli_process_line(&cli, "bogus");
@@ -134,7 +121,7 @@ static void test_cli_puts_null_str(void)
 {
     SYN_CLI cli;
     /* putchar_fn only, no puts_fn — fallback to char-by-char */
-    syn_cli_init(&cli, test_commands, 4, cli_test_putchar, "> ");
+    syn_cli_init(&cli, test_commands, 4, "> ");
 
     clear_output();
     /* Process a command that triggers output via putchar fallback */
@@ -147,7 +134,7 @@ static void test_cli_puts_null_str(void)
 static void test_cli_process_char_echo(void)
 {
     SYN_CLI cli;
-    syn_cli_init(&cli, test_commands, 4, cli_test_putchar, "> ");
+    syn_cli_init(&cli, test_commands, 4, "> ");
 
     led_handler_called = 0;
     led_handler_arg1[0] = '\0';
@@ -197,7 +184,7 @@ static void test_cli_process_char_echo(void)
 static void test_cli_process_char_no_echo(void)
 {
     SYN_CLI cli;
-    syn_cli_init(&cli, test_commands, 4, cli_test_putchar, "> ");
+    syn_cli_init(&cli, test_commands, 4, "> ");
     syn_cli_set_echo(&cli, false);
 
     /* Backspace with no-echo: type "led\bd\n" → executes "led" */
@@ -226,7 +213,7 @@ static void test_cli_process_char_no_echo(void)
 static void test_cli_ctrl_u(void)
 {
     SYN_CLI cli;
-    syn_cli_init(&cli, test_commands, 4, cli_test_putchar, "> ");
+    syn_cli_init(&cli, test_commands, 4, "> ");
     syn_cli_set_echo(&cli, true);
 
     /* Type some chars then Ctrl-U to clear */
@@ -254,7 +241,7 @@ static void test_cli_ctrl_u(void)
 static void test_cli_escape_sequences(void)
 {
     SYN_CLI cli;
-    syn_cli_init(&cli, test_commands, 4, cli_test_putchar, "> ");
+    syn_cli_init(&cli, test_commands, 4, "> ");
 
     /* ESC [ A = Up Arrow → maps to Ctrl-P (history recall) */
     /* With empty history, should just return */
@@ -284,7 +271,7 @@ static void test_cli_escape_sequences(void)
 static void test_cli_tab_as_space(void)
 {
     SYN_CLI cli;
-    syn_cli_init(&cli, test_commands, 4, cli_test_putchar, "> ");
+    syn_cli_init(&cli, test_commands, 4, "> ");
 
     /* "led\ton\r" — tab between command and arg */
     led_handler_called = 0;
@@ -309,7 +296,7 @@ static void test_cli_tab_as_space(void)
 static void test_cli_ignore_control_chars(void)
 {
     SYN_CLI cli;
-    syn_cli_init(&cli, test_commands, 4, cli_test_putchar, "> ");
+    syn_cli_init(&cli, test_commands, 4, "> ");
 
     /* Ctrl-D (0x04), Ctrl-E, etc. should be silently ignored */
     syn_cli_process_char(&cli, 0x04); /* Ctrl-D */
@@ -328,7 +315,7 @@ static void test_cli_ignore_control_chars(void)
 static void test_cli_command_error_return(void)
 {
     SYN_CLI cli;
-    syn_cli_init(&cli, test_commands, 4, cli_test_putchar, "> ");
+    syn_cli_init(&cli, test_commands, 4, "> ");
 
     clear_output();
     syn_cli_process_line(&cli, "fail");
@@ -341,7 +328,7 @@ static void test_cli_command_error_return(void)
 static void test_cli_quoted_args(void)
 {
     SYN_CLI cli;
-    syn_cli_init(&cli, test_commands, 4, cli_test_putchar, "> ");
+    syn_cli_init(&cli, test_commands, 4, "> ");
 
     led_handler_called = 0;
     led_handler_arg1[0] = '\0';
@@ -355,7 +342,7 @@ static void test_cli_quoted_args(void)
 static void test_cli_printf(void)
 {
     SYN_CLI cli;
-    syn_cli_init(&cli, test_commands, 4, cli_test_putchar, "> ");
+    syn_cli_init(&cli, test_commands, 4, "> ");
 
     clear_output();
     syn_cli_printf(&cli, "value=%d\r\n", 99);
@@ -367,7 +354,7 @@ static void test_cli_printf(void)
 static void test_cli_buffer_full(void)
 {
     SYN_CLI cli;
-    syn_cli_init(&cli, test_commands, 4, cli_test_putchar, "> ");
+    syn_cli_init(&cli, test_commands, 4, "> ");
 
     /* Fill the buffer to capacity */
     for (int i = 0; i < SYN_CLI_LINE_BUF_SIZE + 10; i++) {
@@ -385,7 +372,7 @@ static void test_cli_buffer_full(void)
 static void test_cli_backspace_empty(void)
 {
     SYN_CLI cli;
-    syn_cli_init(&cli, test_commands, 4, cli_test_putchar, "> ");
+    syn_cli_init(&cli, test_commands, 4, "> ");
 
     /* Backspace on empty line should be a no-op */
     syn_cli_process_char(&cli, '\b');
@@ -401,7 +388,7 @@ static void test_cli_backspace_empty(void)
 static void test_cli_help_no_help_string(void)
 {
     SYN_CLI cli;
-    syn_cli_init(&cli, test_commands, 4, cli_test_putchar, "> ");
+    syn_cli_init(&cli, test_commands, 4, "> ");
 
     clear_output();
     syn_cli_process_line(&cli, "help");
@@ -414,7 +401,7 @@ static void test_cli_help_no_help_string(void)
 static void test_cli_builtin_version(void)
 {
     SYN_CLI cli;
-    syn_cli_init(&cli, test_commands, 4, cli_test_putchar, "> ");
+    syn_cli_init(&cli, test_commands, 4, "> ");
 
     clear_output();
     syn_cli_process_line(&cli, "version");
@@ -427,7 +414,7 @@ static void test_cli_builtin_version(void)
 static void test_cli_builtin_uptime(void)
 {
     SYN_CLI cli;
-    syn_cli_init(&cli, test_commands, 4, cli_test_putchar, "> ");
+    syn_cli_init(&cli, test_commands, 4, "> ");
 
     clear_output();
     syn_cli_process_line(&cli, "uptime");
@@ -439,7 +426,7 @@ static void test_cli_builtin_uptime(void)
 static void test_cli_builtin_errors_no_log(void)
 {
     SYN_CLI cli;
-    syn_cli_init(&cli, test_commands, 4, cli_test_putchar, "> ");
+    syn_cli_init(&cli, test_commands, 4, "> ");
 
     /* Explicitly set errlog to NULL (default is already NULL) */
     syn_cli_set_errlog(NULL);
@@ -454,7 +441,7 @@ static void test_cli_builtin_errors_no_log(void)
 static void test_cli_builtin_errors_empty(void)
 {
     SYN_CLI cli;
-    syn_cli_init(&cli, test_commands, 4, cli_test_putchar, "> ");
+    syn_cli_init(&cli, test_commands, 4, "> ");
 
     SYN_ErrEntry entries[4];
     SYN_ErrLog elog;
@@ -474,7 +461,7 @@ static void test_cli_builtin_errors_empty(void)
 static void test_cli_builtin_errors_with_entries(void)
 {
     SYN_CLI cli;
-    syn_cli_init(&cli, test_commands, 4, cli_test_putchar, "> ");
+    syn_cli_init(&cli, test_commands, 4, "> ");
 
     SYN_ErrEntry entries[4];
     SYN_ErrLog elog;
@@ -497,7 +484,7 @@ static void test_cli_builtin_errors_with_entries(void)
 static void test_cli_builtin_tasks_no_sched(void)
 {
     SYN_CLI cli;
-    syn_cli_init(&cli, test_commands, 4, cli_test_putchar, "> ");
+    syn_cli_init(&cli, test_commands, 4, "> ");
 
     syn_cli_set_scheduler(NULL);
 
@@ -517,7 +504,7 @@ static SYN_PT_Status dummy_task_fn(SYN_PT *pt, struct SYN_Task *task)
 static void test_cli_builtin_tasks_with_sched(void)
 {
     SYN_CLI cli;
-    syn_cli_init(&cli, test_commands, 4, cli_test_putchar, "> ");
+    syn_cli_init(&cli, test_commands, 4, "> ");
 
     SYN_Task tasks[3];
     SYN_Sched sched;
@@ -545,7 +532,7 @@ static void test_cli_builtin_tasks_with_sched(void)
 static void test_cli_history(void)
 {
     SYN_CLI cli;
-    syn_cli_init(&cli, test_commands, 4, cli_test_putchar, "> ");
+    syn_cli_init(&cli, test_commands, 4, "> ");
 
     /* Execute some commands to build history */
     syn_cli_process_line(&cli, "led on");
@@ -566,7 +553,7 @@ static void test_cli_history(void)
 
     /* Recall: empty history count = 0, Ctrl-P is no-op */
     SYN_CLI cli2;
-    syn_cli_init(&cli2, test_commands, 4, cli_test_putchar, "> ");
+    syn_cli_init(&cli2, test_commands, 4, "> ");
     syn_cli_process_char(&cli2, 0x10); /* Ctrl-P with empty history — no-op */
 
     /* History via ANSI Up Arrow sequence → ESC [ A */
@@ -582,7 +569,7 @@ static void test_cli_history(void)
 static void test_cli_empty_line(void)
 {
     SYN_CLI cli;
-    syn_cli_init(&cli, test_commands, 4, cli_test_putchar, "> ");
+    syn_cli_init(&cli, test_commands, 4, "> ");
 
     led_handler_called = 0;
     syn_cli_process_line(&cli, "");
@@ -601,7 +588,7 @@ static void test_cli_help_padding(void)
     static const SYN_CLI_Command cmds[] = {
         { "go", "go - short name", cmd_status },
     };
-    syn_cli_init(&cli, cmds, 1, cli_test_putchar, "> ");
+    syn_cli_init(&cli, cmds, 1, "> ");
 
     clear_output();
     syn_cli_process_line(&cli, "help");
@@ -617,7 +604,7 @@ static void test_cli_null_handler(void)
         { "noop", "noop - does nothing", NULL },
     };
     SYN_CLI cli;
-    syn_cli_init(&cli, cmds, 1, cli_test_putchar, "> ");
+    syn_cli_init(&cli, cmds, 1, "> ");
 
     /* Should dispatch without crash even with NULL handler */
     led_handler_called = 0;
@@ -630,7 +617,7 @@ static void test_cli_null_handler(void)
 static void test_cli_errors_unknown_severity(void)
 {
     SYN_CLI cli;
-    syn_cli_init(&cli, test_commands, 4, cli_test_putchar, "> ");
+    syn_cli_init(&cli, test_commands, 4, "> ");
 
     SYN_ErrEntry entries[2];
     SYN_ErrLog elog;
@@ -655,7 +642,7 @@ static void test_cli_errors_unknown_severity(void)
 static void test_cli_tasks_unknown_state(void)
 {
     SYN_CLI cli;
-    syn_cli_init(&cli, test_commands, 4, cli_test_putchar, "> ");
+    syn_cli_init(&cli, test_commands, 4, "> ");
 
     SYN_Task tasks[1];
     SYN_Sched sched;

@@ -9,7 +9,8 @@ SyntropicOS separates hardware-specific code into a **port layer** — a set of 
 | `syn_port_system.h` | `get_tick_ms`, `delay_ms`, `enter_critical`, `exit_critical`, `system_reset` | Always |
 | `syn_port_spinlock.h` | `spinlock_acquire`, `spinlock_release`, `spinlock_try_acquire`, `core_id`, `ipc_notify` | If using multicore (AMP) |
 | `syn_port_gpio.h` | `init`, `deinit`, `write`, `read`, `toggle` | If using GPIO, buttons, LEDs, motors |
-| `syn_port_uart.h` | `init`, `deinit`, `transmit`, `receive`, byte variants | If using UART, CLI, logging |
+| `syn_port_serial.h` | `init`, `write`, `read` | If using CLI or logging (console I/O) |
+| `syn_port_uart.h` | `init`, `deinit`, `transmit`, `receive`, byte variants | If using peripheral UARTs (Modbus, GPS, sensors) |
 | `syn_port_spi.h` | `init`, `deinit`, `transfer`, `cs_assert`, `cs_deassert` | If using SPI devices |
 | `syn_port_i2c.h` | `init`, `deinit`, `write`, `read`, `write_read` | If using I2C devices |
 | `syn_port_flash.h` | `erase`, `read`, `write`, `sector_size` | If using parameter store or LittleFS |

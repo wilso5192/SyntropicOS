@@ -9,6 +9,7 @@
 #if defined(ESP_PLATFORM) && !defined(ARDUINO)
 
 #include "syntropic/common/syn_defs.h"
+#include "syntropic/common/syn_compiler.h"
 #include "syntropic/port/syn_port_system.h"
 #include "syntropic/port/syn_port_gpio.h"
 #include "syntropic/port/syn_port_uart.h"
@@ -17,8 +18,11 @@
 #include "freertos/task.h"
 #include "esp_timer.h"
 #include "esp_system.h"
+#include "esp_log.h"
 #include "driver/gpio.h"
 #include "driver/uart.h"
+
+static const char *TAG = "syn_port";
 
 /* ── System Port ────────────────────────────────────────────────────────── */
 
@@ -49,6 +53,12 @@ void syn_port_system_reset(void)
 {
     esp_restart();
     for (;;);
+}
+
+SYN_NORETURN void syn_assert_failed(const char *file, int line)
+{
+    ESP_LOGE(TAG, "ASSERT FAILED at %s:%d", file, line);
+    abort();
 }
 
 /* ── GPIO Port ──────────────────────────────────────────────────────────── */
@@ -117,17 +127,23 @@ SYN_Status syn_port_gpio_toggle(SYN_GPIO_Pin pin)
     return (err == ESP_OK) ? SYN_OK : SYN_INVALID_PARAM;
 }
 
-/* ── UART Port ──────────────────────────────────────────────────────────── */
+/* ── UART Port (weak — override for chips with USB Serial JTAG) ─────── */
+
+#include "soc/soc_caps.h"
 
 static uart_port_t get_uart_port(SYN_UARTInstance instance)
 {
     if (instance == 0) return UART_NUM_0;
+#if SOC_UART_HP_NUM > 1
     if (instance == 1) return UART_NUM_1;
+#endif
+#if SOC_UART_HP_NUM > 2
     if (instance == 2) return UART_NUM_2;
+#endif
     return UART_NUM_MAX;
 }
 
-SYN_Status syn_port_uart_init(SYN_UARTInstance instance, uint32_t baudrate)
+SYN_WEAK SYN_Status syn_port_uart_init(SYN_UARTInstance instance, uint32_t baudrate)
 {
     uart_port_t port = get_uart_port(instance);
     if (port == UART_NUM_MAX) return SYN_INVALID_PARAM;
@@ -138,26 +154,20 @@ SYN_Status syn_port_uart_init(SYN_UARTInstance instance, uint32_t baudrate)
         .parity    = UART_PARITY_DISABLE,
         .stop_bits = UART_STOP_BITS_1,
         .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-        .source_clk = UART_SCLK_APB,
+        .source_clk = UART_SCLK_DEFAULT,
     };
 
     if (uart_param_config(port, &uart_config) != ESP_OK) return SYN_INVALID_PARAM;
-    // Install driver with standard RX/TX buffers (no event queue)
     if (uart_driver_install(port, 256, 256, 0, NULL, 0) != ESP_OK) return SYN_INVALID_PARAM;
 
-    // Use default pin mapping for the port
-    if (port == UART_NUM_0) {
-        uart_set_pin(port, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
-    } else if (port == UART_NUM_1) {
-        uart_set_pin(port, 10, 9, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE); // Standard pins
-    } else if (port == UART_NUM_2) {
-        uart_set_pin(port, 17, 16, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE); // Standard pins
-    }
+    /* Use default pin mapping */
+    uart_set_pin(port, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE,
+                 UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
 
     return SYN_OK;
 }
 
-SYN_Status syn_port_uart_deinit(SYN_UARTInstance instance)
+SYN_WEAK SYN_Status syn_port_uart_deinit(SYN_UARTInstance instance)
 {
     uart_port_t port = get_uart_port(instance);
     if (port == UART_NUM_MAX) return SYN_INVALID_PARAM;
@@ -165,7 +175,7 @@ SYN_Status syn_port_uart_deinit(SYN_UARTInstance instance)
     return SYN_OK;
 }
 
-SYN_Status syn_port_uart_transmit(SYN_UARTInstance instance,
+SYN_WEAK SYN_Status syn_port_uart_transmit(SYN_UARTInstance instance,
                                   const uint8_t *data,
                                   size_t len,
                                   uint32_t timeout_ms)
@@ -176,12 +186,11 @@ SYN_Status syn_port_uart_transmit(SYN_UARTInstance instance,
     int written = uart_write_bytes(port, (const char *)data, len);
     if (written < 0) return SYN_INVALID_PARAM;
 
-    // Wait for transmit completion
     esp_err_t err = uart_wait_tx_done(port, timeout_ms == 0 ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms));
     return (err == ESP_OK) ? SYN_OK : SYN_TIMEOUT;
 }
 
-SYN_Status syn_port_uart_receive(SYN_UARTInstance instance,
+SYN_WEAK SYN_Status syn_port_uart_receive(SYN_UARTInstance instance,
                                  uint8_t *data,
                                  size_t len,
                                  size_t *received,
@@ -197,15 +206,44 @@ SYN_Status syn_port_uart_receive(SYN_UARTInstance instance,
     return (read > 0) ? SYN_OK : SYN_TIMEOUT;
 }
 
-SYN_Status syn_port_uart_transmit_byte(SYN_UARTInstance instance, uint8_t byte)
+SYN_WEAK SYN_Status syn_port_uart_transmit_byte(SYN_UARTInstance instance, uint8_t byte)
 {
     return syn_port_uart_transmit(instance, &byte, 1, 100);
 }
 
-SYN_Status syn_port_uart_receive_byte(SYN_UARTInstance instance, uint8_t *byte, uint32_t timeout_ms)
+SYN_WEAK SYN_Status syn_port_uart_receive_byte(SYN_UARTInstance instance, uint8_t *byte, uint32_t timeout_ms)
 {
     size_t rec = 0;
     return syn_port_uart_receive(instance, byte, 1, &rec, timeout_ms);
+}
+
+/* ── Console serial port (weak — override for USB CDC chips) ──────────── */
+
+#include "syntropic/port/syn_port_serial.h"
+
+#ifndef SYN_SERIAL_UART_INSTANCE
+  #define SYN_SERIAL_UART_INSTANCE  0
+#endif
+
+SYN_WEAK SYN_Status syn_port_serial_init(uint32_t baudrate)
+{
+    if (baudrate == 0) baudrate = 115200;
+    return syn_port_uart_init(SYN_SERIAL_UART_INSTANCE, baudrate);
+}
+
+SYN_WEAK int syn_port_serial_write(const uint8_t *data, size_t len)
+{
+    SYN_Status s = syn_port_uart_transmit(SYN_SERIAL_UART_INSTANCE, data, len, 100);
+    return (s == SYN_OK) ? (int)len : -1;
+}
+
+SYN_WEAK int syn_port_serial_read(uint8_t *buf, size_t max_len)
+{
+    size_t received = 0;
+    SYN_Status s = syn_port_uart_receive(SYN_SERIAL_UART_INSTANCE, buf, max_len, &received, 0);
+    if (s == SYN_TIMEOUT) return (int)received;  /* got some bytes before timeout */
+    if (s != SYN_OK) return -1;
+    return (int)received;
 }
 
 #endif /* ESP_PLATFORM && !ARDUINO */

@@ -8,17 +8,9 @@
 #include "syntropic/syntropic.h"
 #include "syntropic/util/syn_fsm.h"
 
-static char log_capture_buf[1024];
-static size_t log_capture_pos = 0;
-
-static void log_capture_output(const char *str, size_t len)
-{
-    size_t space = sizeof(log_capture_buf) - log_capture_pos - 1;
-    if (len > space) len = space;
-    memcpy(log_capture_buf + log_capture_pos, str, len);
-    log_capture_pos += len;
-    log_capture_buf[log_capture_pos] = '\0';
-}
+/* Log now writes directly to mock serial */
+#define log_capture_buf  ((char *)mock_serial_tx_buf)
+#define log_capture_pos  mock_serial_tx_len
 
 enum { FSM_ST_IDLE, FSM_ST_RUNNING, FSM_ST_ERROR };
 enum { FSM_EV_START, FSM_EV_STOP, FSM_EV_FAULT };
@@ -42,7 +34,7 @@ static void test_fsm(void)
 
     /* Re-init log so FSM can log transitions */
     log_capture_pos = 0;
-    syn_log_init(log_capture_output, SYN_LOG_DEBUG);
+    syn_log_init(SYN_LOG_DEBUG);
 
     SYN_FSM fsm;
     syn_fsm_init(&fsm, test_fsm_table, FSM_ST_IDLE, "fsm");
@@ -128,7 +120,7 @@ static void test_fsm_edge_cases(void)
 
     /* Transition with guard_allow (returns true) */
     log_capture_pos = 0;
-    syn_log_init(log_capture_output, SYN_LOG_DEBUG);
+    syn_log_init(SYN_LOG_DEBUG);
 
     bool took = syn_fsm_dispatch(&fsm, FSM_EV_START);
     TEST_ASSERT_TRUE(took);

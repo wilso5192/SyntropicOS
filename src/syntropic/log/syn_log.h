@@ -93,28 +93,17 @@ typedef enum {
 
 /* ── Output function type ───────────────────────────────────────────────── */
 
-/**
- * @brief Log output callback.
- *
- * The logging system calls this to emit formatted output. The string
- * is NOT null-terminated at position @p len (it is within the buffer,
- * but @p len is the exact number of chars to write).
- *
- * @param str  Formatted string.
- * @param len  Number of bytes to output.
- */
-typedef void (*SYN_LogOutputFunc)(const char *str, size_t len);
-
 /* ── API ────────────────────────────────────────────────────────────────── */
 
 /**
  * @brief Initialize the logging system.
  *
- * @param output    Function that writes log output (e.g., to UART).
+ * Output goes directly to syn_port_serial_write — no callback needed.
+ *
  * @param min_level Minimum runtime log level (messages below this are
  *                  suppressed at runtime). Compile-time level still applies.
  */
-void syn_log_init(SYN_LogOutputFunc output, SYN_LogLevel min_level);
+void syn_log_init(SYN_LogLevel min_level);
 
 /**
  * @brief Change the runtime minimum log level.

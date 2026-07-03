@@ -11,6 +11,7 @@
 
 #include "syn_log.h"
 #include "../port/syn_port_system.h"
+#include "../port/syn_port_serial.h"
 #include "../util/syn_assert.h"
 #include "../util/syn_fmt.h"
 
@@ -25,10 +26,10 @@
 
 /* ── State ──────────────────────────────────────────────────────────────── */
 
-static SYN_LogOutputFunc s_output   = NULL;        /**< Registered output callback. */
 static SYN_LogLevel      s_level    = SYN_LOG_DEBUG; /**< Current minimum log level.  */
+static bool              s_inited   = false;          /**< Init flag.                  */
 
-/* ── Level labels ───────────────────────────────────────────────────────── */
+/* ── Level labels ─────────────────────────────────────────────────────────────── */
 
 /** @brief Single-char level labels: T=Trace, D=Debug, I=Info, W=Warn, E=Error, F=Fatal. */
 static const char * const s_level_chars = "TDIWEF";
@@ -47,10 +48,10 @@ static const char * const s_level_colors[] = {
 
 /* ── API ────────────────────────────────────────────────────────────────── */
 
-void syn_log_init(SYN_LogOutputFunc output, SYN_LogLevel min_level)
+void syn_log_init(SYN_LogLevel min_level)
 {
-    s_output = output;
     s_level  = min_level;
+    s_inited = true;
 }
 
 void syn_log_set_level(SYN_LogLevel level)
@@ -65,7 +66,7 @@ SYN_LogLevel syn_log_get_level(void)
 
 void syn_log_va(SYN_LogLevel level, const char *tag, const char *fmt, va_list args)
 {
-    if (s_output == NULL) {
+    if (!s_inited) {
         return;
     }
 
@@ -151,7 +152,7 @@ void syn_log_va(SYN_LogLevel level, const char *tag, const char *fmt, va_list ar
     if (pos >= (int)sizeof(buf)) pos = (int)sizeof(buf) - 1;
     buf[pos] = '\0';
 
-    s_output(buf, (size_t)pos);
+    syn_port_serial_write((const uint8_t *)buf, (size_t)pos);
 }
 
 void syn_log(SYN_LogLevel level, const char *tag, const char *fmt, ...)
@@ -164,15 +165,15 @@ void syn_log(SYN_LogLevel level, const char *tag, const char *fmt, ...)
 
 void syn_log_raw(const char *str)
 {
-    if (s_output == NULL || str == NULL) {
+    if (!s_inited || str == NULL) {
         return;
     }
-    s_output(str, strlen(str));
+    syn_port_serial_write((const uint8_t *)str, strlen(str));
 }
 
 void syn_log_hexdump(const char *tag, const void *data, size_t len)
 {
-    if (s_output == NULL || data == NULL) {
+    if (!s_inited || data == NULL) {
         return;
     }
 

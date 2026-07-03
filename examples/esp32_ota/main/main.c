@@ -1012,12 +1012,6 @@ static int cmd_websocket(int argc, char *argv[])
 
 /* ── CLI setup ──────────────────────────────────────────────────────────── */
 
-static void cli_putchar(char ch)
-{
-    putchar(ch);
-    fflush(stdout);
-}
-
 static const SYN_CLI_Command cli_commands[] = {
     { "wifi",      "WiFi configuration",    cmd_wifi      },
     { "http",      "HTTP requests",         cmd_http      },
@@ -1068,7 +1062,7 @@ void app_main(void)
 
     /* Init CLI */
     syn_cli_init(&cli, cli_commands, SYN_ARRAY_SIZE(cli_commands),
-                 cli_putchar, "syntropic> ");
+                 "syntropic> ");
 
     printf("Type 'help' for commands.\r\n");
     syn_cli_print_prompt(&cli);

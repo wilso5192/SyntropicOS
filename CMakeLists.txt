@@ -65,6 +65,8 @@ set(SYN_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/syntropic/crypto/syn_x25519.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/syntropic/net/syn_sntp.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/syntropic/net/syn_wg.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/syntropic/net/syn_mqtt.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/syntropic/net/syn_transport_tcp.c
 )
 
 # Optional: weak stubs (link these so unimplemented port functions assert

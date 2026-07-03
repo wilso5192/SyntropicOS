@@ -41,6 +41,7 @@
 #define SYN_CLI_H
 
 #include "../common/syn_defs.h"
+#include "../port/syn_port_serial.h"
 
 #include <stddef.h>
 #include <stdbool.h>
@@ -88,33 +89,11 @@ typedef struct {
     SYN_CLI_Handler  handler;  /**< Function called when command matches   */
 } SYN_CLI_Command;
 
-/**
- * @brief Character output function.
- *
- * The CLI calls this to emit one character (for echo, prompt, and output).
- *
- * @param ch  Character to output.
- */
-typedef void (*SYN_CLI_PutChar)(char ch);
-
-/**
- * @brief String output function.
- *
- * The CLI calls this to emit a null-terminated string.
- *
- * @param str  Null-terminated string.
- */
-typedef void (*SYN_CLI_Puts)(const char *str);
-
 /** @brief CLI instance — command table, line buffer, I/O, and history. */
 typedef struct {
     /* Command table */
     const SYN_CLI_Command *commands;     /**< Registered command array    */
     size_t                  command_count; /**< Number of commands         */
-
-    /* I/O */
-    SYN_CLI_PutChar        putchar_fn;   /**< Single-char output function */
-    SYN_CLI_Puts           puts_fn;      /**< String output function      */
 
     /* Line buffer */
     char    line_buf[SYN_CLI_LINE_BUF_SIZE]; /**< Input line buffer       */
@@ -139,29 +118,18 @@ typedef struct {
 /**
  * @brief Initialize a CLI instance.
  *
+ * Output goes directly to syn_port_serial_write — no callback needed.
+ *
  * @param cli        CLI instance to initialize.
  * @param commands   Array of command descriptors.
  * @param cmd_count  Number of commands.
- * @param putchar_fn Character output function.
  * @param prompt     Prompt string (e.g., "> " or "syntropic> "). Stored by
  *                   pointer, not copied.
  */
 void syn_cli_init(SYN_CLI *cli,
                    const SYN_CLI_Command *commands,
                    size_t cmd_count,
-                   SYN_CLI_PutChar putchar_fn,
                    const char *prompt);
-
-/**
- * @brief Set an optional string output function for multi-char output.
- *
- * If not set, the CLI uses putchar_fn to output strings one character
- * at a time. Setting this can improve efficiency.
- *
- * @param cli      CLI instance.
- * @param puts_fn  String output function.
- */
-void syn_cli_set_puts(SYN_CLI *cli, SYN_CLI_Puts puts_fn);
 
 /**
  * @brief Enable or disable local echo.

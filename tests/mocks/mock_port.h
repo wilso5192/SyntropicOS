@@ -72,6 +72,16 @@ extern uint8_t mock_uart_tx_buf[MOCK_UART_BUF_SIZE];
 extern size_t  mock_uart_tx_len;
 extern bool    mock_uart_init_fail;
 
+/* ── Console serial ────────────────────────────────────────────────────── */
+
+#define MOCK_SERIAL_BUF_SIZE 4096
+
+extern uint8_t mock_serial_tx_buf[MOCK_SERIAL_BUF_SIZE]; /**< Captured console output */
+extern size_t  mock_serial_tx_len;
+extern uint8_t mock_serial_rx_buf[MOCK_SERIAL_BUF_SIZE]; /**< Canned console input    */
+extern size_t  mock_serial_rx_len;
+extern size_t  mock_serial_rx_pos;
+
 /* ── CAN ────────────────────────────────────────────────────────────────── */
 
 #include "syntropic/drivers/syn_can.h"

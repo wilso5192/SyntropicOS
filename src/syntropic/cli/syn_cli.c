@@ -10,6 +10,7 @@
  */
 
 #include "syn_cli.h"
+#include "../port/syn_port_serial.h"
 #include "../util/syn_assert.h"
 #include "../util/syn_fmt.h"
 
@@ -37,36 +38,28 @@ static void cli_builtin_tasks(const SYN_CLI *cli);
 #endif
 
 /**
- * @brief Emit a single character via the CLI output.
- * @param cli  CLI instance.
+ * @brief Emit a single character via the console serial port.
+ * @param cli  CLI instance (unused, kept for internal API consistency).
  * @param ch   Character to emit.
  */
 static void cli_putchar(const SYN_CLI *cli, char ch)
 {
-    if (cli->putchar_fn != NULL) {
-        cli->putchar_fn(ch);
-    }
+    (void)cli;
+    syn_port_serial_write_byte((uint8_t)ch);
 }
 
 /**
- * @brief Emit a null-terminated string via the CLI output.
- * @param cli  CLI instance.
+ * @brief Emit a null-terminated string via the console serial port.
+ * @param cli  CLI instance (unused, kept for internal API consistency).
  * @param str  String to print.
  */
 static void cli_puts(const SYN_CLI *cli, const char *str)
 {
+    (void)cli;
     if (str == NULL) return;
-
-    if (cli->puts_fn != NULL) {
-        cli->puts_fn(str);
-        return;
-    }
-
-    /* Fallback: use putchar one char at a time */
-    if (cli->putchar_fn != NULL) {
-        while (*str) {
-            cli->putchar_fn(*str++);
-        }
+    size_t len = strlen(str);
+    if (len > 0) {
+        syn_port_serial_write((const uint8_t *)str, len);
     }
 }
 
@@ -242,26 +235,16 @@ static void cli_history_push(SYN_CLI *cli, const char *line)
 void syn_cli_init(SYN_CLI *cli,
                    const SYN_CLI_Command *commands,
                    size_t cmd_count,
-                   SYN_CLI_PutChar putchar_fn,
                    const char *prompt)
 {
     SYN_ASSERT(cli != NULL);
-    SYN_ASSERT(putchar_fn != NULL);
 
     memset(cli, 0, sizeof(*cli));
     cli->commands      = commands;
     cli->command_count = cmd_count;
-    cli->putchar_fn    = putchar_fn;
-    cli->puts_fn       = NULL;
     cli->prompt        = (prompt != NULL) ? prompt : "> ";
     cli->echo          = true;
     cli->line_pos      = 0;
-}
-
-void syn_cli_set_puts(SYN_CLI *cli, SYN_CLI_Puts puts_fn)
-{
-    SYN_ASSERT(cli != NULL);
-    cli->puts_fn = puts_fn;
 }
 
 void syn_cli_set_echo(SYN_CLI *cli, bool echo)

@@ -207,4 +207,35 @@ SYN_Status syn_port_uart_receive_byte(SYN_UARTInstance instance, uint8_t *byte, 
     return SYN_OK;
 }
 
+/* ── Console serial port (Pico SDK stdio) ──────────────────────────────── */
+
+#include "syntropic/port/syn_port_serial.h"
+
+SYN_WEAK SYN_Status syn_port_serial_init(uint32_t baudrate)
+{
+    (void)baudrate;
+    /* stdio_init_all() must be called by the application before this.
+     * It configures USB CDC and/or UART console via Pico SDK. */
+    return SYN_OK;
+}
+
+SYN_WEAK int syn_port_serial_write(const uint8_t *data, size_t len)
+{
+    for (size_t i = 0; i < len; i++) {
+        putchar_raw(data[i]);
+    }
+    return (int)len;
+}
+
+SYN_WEAK int syn_port_serial_read(uint8_t *buf, size_t max_len)
+{
+    size_t count = 0;
+    while (count < max_len) {
+        int ch = getchar_timeout_us(0); /* non-blocking */
+        if (ch == PICO_ERROR_TIMEOUT) break;
+        buf[count++] = (uint8_t)ch;
+    }
+    return (int)count;
+}
+
 #endif /* PICO_BOARD && !ARDUINO */

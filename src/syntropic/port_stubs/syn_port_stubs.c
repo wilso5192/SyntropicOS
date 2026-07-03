@@ -545,5 +545,119 @@ SYN_WEAK void syn_port_memory_barrier(void)
 {
     SYN_COMPILER_BARRIER();
 }
-
 #endif /* SYN_USE_MULTICORE */
+
+/* ── Socket stubs ───────────────────────────────────────────────────────── */
+
+#include "../port/syn_port_socket.h"
+
+SYN_WEAK SYN_Socket syn_port_udp_open(uint16_t port)
+{
+    (void)port;
+    syn_assert_failed(__FILE__, __LINE__);
+    return SYN_SOCKET_INVALID;
+}
+
+SYN_WEAK int syn_port_udp_sendto(SYN_Socket sock, const void *data, size_t len,
+                                  const SYN_SockAddr *to)
+{
+    (void)sock; (void)data; (void)len; (void)to;
+    syn_assert_failed(__FILE__, __LINE__);
+    return -1;
+}
+
+SYN_WEAK int syn_port_udp_recvfrom(SYN_Socket sock, void *buf, size_t max_len,
+                                    SYN_SockAddr *from, uint32_t timeout_ms)
+{
+    (void)sock; (void)buf; (void)max_len; (void)from; (void)timeout_ms;
+    syn_assert_failed(__FILE__, __LINE__);
+    return -1;
+}
+
+SYN_WEAK SYN_Status syn_port_udp_join_multicast(SYN_Socket sock, const char *multicast_ip)
+{
+    (void)sock; (void)multicast_ip;
+    syn_assert_failed(__FILE__, __LINE__);
+    return SYN_NOT_IMPLEMENTED;
+}
+
+SYN_WEAK void syn_port_sock_close(SYN_Socket sock)
+{
+    (void)sock;
+    syn_assert_failed(__FILE__, __LINE__);
+}
+
+SYN_WEAK SYN_Socket syn_port_sock_connect(const SYN_SockAddr *addr)
+{
+    (void)addr;
+    syn_assert_failed(__FILE__, __LINE__);
+    return SYN_SOCKET_INVALID;
+}
+
+SYN_WEAK SYN_Socket syn_port_sock_connect_host(const char *host, uint16_t port)
+{
+    (void)host; (void)port;
+    syn_assert_failed(__FILE__, __LINE__);
+    return SYN_SOCKET_INVALID;
+}
+
+SYN_WEAK int syn_port_sock_send(SYN_Socket sock, const void *data, size_t len)
+{
+    (void)sock; (void)data; (void)len;
+    syn_assert_failed(__FILE__, __LINE__);
+    return -1;
+}
+
+SYN_WEAK int syn_port_sock_send_all(SYN_Socket sock, const void *data, size_t len)
+{
+    (void)sock; (void)data; (void)len;
+    syn_assert_failed(__FILE__, __LINE__);
+    return -1;
+}
+
+SYN_WEAK int syn_port_sock_recv(SYN_Socket sock, void *buf, size_t max_len,
+                                 uint32_t timeout_ms)
+{
+    (void)sock; (void)buf; (void)max_len; (void)timeout_ms;
+    syn_assert_failed(__FILE__, __LINE__);
+    return -1;
+}
+
+SYN_WEAK SYN_Socket syn_port_sock_listen(uint16_t port, int backlog)
+{
+    (void)port; (void)backlog;
+    syn_assert_failed(__FILE__, __LINE__);
+    return SYN_SOCKET_INVALID;
+}
+
+SYN_WEAK SYN_Socket syn_port_sock_accept(SYN_Socket listener, uint32_t timeout_ms)
+{
+    (void)listener; (void)timeout_ms;
+    syn_assert_failed(__FILE__, __LINE__);
+    return SYN_SOCKET_INVALID;
+}
+
+/* ── Console serial stubs ───────────────────────────────────────────────── */
+
+#include "../port/syn_port_serial.h"
+
+SYN_WEAK SYN_Status syn_port_serial_init(uint32_t baudrate)
+{
+    (void)baudrate;
+    syn_assert_failed(__FILE__, __LINE__);
+    return SYN_NOT_IMPLEMENTED;
+}
+
+SYN_WEAK int syn_port_serial_write(const uint8_t *data, size_t len)
+{
+    (void)data; (void)len;
+    syn_assert_failed(__FILE__, __LINE__);
+    return -1;
+}
+
+SYN_WEAK int syn_port_serial_read(uint8_t *buf, size_t max_len)
+{
+    (void)buf; (void)max_len;
+    syn_assert_failed(__FILE__, __LINE__);
+    return -1;
+}

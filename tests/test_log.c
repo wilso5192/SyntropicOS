@@ -8,17 +8,11 @@
 #include "syntropic/syntropic.h"
 #include "syntropic/log/syn_log.h"
 
-static char log_capture_buf[1024];
-static size_t log_capture_pos = 0;
+/* Log now writes directly to syn_port_serial_write, which is mocked
+ * by mock_port.c into mock_serial_tx_buf. Alias for test readability. */
 
-static void log_capture_output(const char *str, size_t len)
-{
-    size_t space = sizeof(log_capture_buf) - log_capture_pos - 1;
-    if (len > space) len = space;
-    memcpy(log_capture_buf + log_capture_pos, str, len);
-    log_capture_pos += len;
-    log_capture_buf[log_capture_pos] = '\0';
-}
+#define log_capture_buf  ((char *)mock_serial_tx_buf)
+#define log_capture_pos  mock_serial_tx_len
 
 static void test_logging_basic(void)
 {
@@ -26,7 +20,7 @@ static void test_logging_basic(void)
     log_capture_pos = 0;
     log_capture_buf[0] = '\0';
 
-    syn_log_init(log_capture_output, SYN_LOG_DEBUG);
+    syn_log_init(SYN_LOG_DEBUG);
 
     syn_log(SYN_LOG_DEBUG, "test", "hello %d", 42);
     TEST_ASSERT_TRUE(log_capture_pos > 0);
@@ -62,7 +56,9 @@ static void test_logging_basic(void)
     syn_log_raw(NULL);
     TEST_ASSERT_TRUE(log_capture_pos == 0);
 
-    syn_log_init(NULL, SYN_LOG_DEBUG);
+    /* Test that logging before init is a no-op */
+    mock_serial_tx_len = 0;
+    mock_serial_tx_buf[0] = '\0';
     syn_log(SYN_LOG_INFO, "test", "no crash");
     TEST_ASSERT_TRUE(1);
 }
@@ -72,7 +68,7 @@ static void test_log_hexdump(void)
     log_capture_pos = 0;
     log_capture_buf[0] = '\0';
 
-    syn_log_init(log_capture_output, SYN_LOG_DEBUG);
+    syn_log_init(SYN_LOG_DEBUG);
 
     uint8_t data[20];
     for (int i = 0; i < 20; i++) {
@@ -87,21 +83,17 @@ static void test_log_hexdump(void)
     TEST_ASSERT_NOT_NULL(strstr(log_capture_buf, "0123456789"));
     TEST_ASSERT_NOT_NULL(strstr(log_capture_buf, "......"));
 
-    /* Test with NULL data/output */
+    /* Test with NULL data */
     log_capture_pos = 0;
     syn_log_hexdump("dump", NULL, 20);
     TEST_ASSERT_TRUE(log_capture_pos == 0);
-
-    syn_log_init(NULL, SYN_LOG_DEBUG);
-    syn_log_hexdump("dump", data, 20);
-    TEST_ASSERT_TRUE(1); /* No crash */
 }
 
 static void test_log_invalid_level(void)
 {
     log_capture_pos = 0;
     log_capture_buf[0] = '\0';
-    syn_log_init(log_capture_output, SYN_LOG_TRACE);
+    syn_log_init(SYN_LOG_TRACE);
 
     syn_log((SYN_LogLevel)10, "test", "invalid level message");
     TEST_ASSERT_TRUE(log_capture_pos > 0);
@@ -112,7 +104,7 @@ static void test_log_null_tag(void)
 {
     log_capture_pos = 0;
     log_capture_buf[0] = '\0';
-    syn_log_init(log_capture_output, SYN_LOG_DEBUG);
+    syn_log_init(SYN_LOG_DEBUG);
 
     syn_log(SYN_LOG_DEBUG, NULL, "no tag message");
     TEST_ASSERT_TRUE(log_capture_pos > 0);

@@ -332,4 +332,33 @@ SYN_Status syn_port_uart_receive_byte(SYN_UARTInstance instance, uint8_t *byte, 
     return syn_port_uart_receive(instance, byte, 1, &rec, timeout_ms);
 }
 
+/* ── Console serial port ────────────────────────────────────────────────── */
+
+#include "syntropic/port/syn_port_serial.h"
+
+#ifndef SYN_SERIAL_UART_INSTANCE
+  #define SYN_SERIAL_UART_INSTANCE  0
+#endif
+
+SYN_WEAK SYN_Status syn_port_serial_init(uint32_t baudrate)
+{
+    if (baudrate == 0) baudrate = 115200;
+    return syn_port_uart_init(SYN_SERIAL_UART_INSTANCE, baudrate);
+}
+
+SYN_WEAK int syn_port_serial_write(const uint8_t *data, size_t len)
+{
+    SYN_Status s = syn_port_uart_transmit(SYN_SERIAL_UART_INSTANCE, data, len, 100);
+    return (s == SYN_OK) ? (int)len : -1;
+}
+
+SYN_WEAK int syn_port_serial_read(uint8_t *buf, size_t max_len)
+{
+    size_t received = 0;
+    SYN_Status s = syn_port_uart_receive(SYN_SERIAL_UART_INSTANCE, buf, max_len, &received, 0);
+    if (s == SYN_TIMEOUT) return (int)received;
+    if (s != SYN_OK) return -1;
+    return (int)received;
+}
+
 #endif /* STM32 HAL */

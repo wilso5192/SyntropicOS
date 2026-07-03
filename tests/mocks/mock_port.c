@@ -131,6 +131,42 @@ SYN_Status syn_port_uart_receive_byte(SYN_UARTInstance i, uint8_t *b, uint32_t t
     return SYN_TIMEOUT;
 }
 
+/* ── Console serial ────────────────────────────────────────────────────── */
+
+#include "syntropic/port/syn_port_serial.h"
+
+uint8_t mock_serial_tx_buf[MOCK_SERIAL_BUF_SIZE];
+size_t  mock_serial_tx_len = 0;
+uint8_t mock_serial_rx_buf[MOCK_SERIAL_BUF_SIZE];
+size_t  mock_serial_rx_len = 0;
+size_t  mock_serial_rx_pos = 0;
+
+SYN_Status syn_port_serial_init(uint32_t baudrate)
+{
+    (void)baudrate;
+    return SYN_OK;
+}
+
+int syn_port_serial_write(const uint8_t *data, size_t len)
+{
+    for (size_t i = 0; i < len; i++) {
+        if (mock_serial_tx_len < MOCK_SERIAL_BUF_SIZE - 1) {
+            mock_serial_tx_buf[mock_serial_tx_len++] = data[i];
+            mock_serial_tx_buf[mock_serial_tx_len] = '\0';
+        }
+    }
+    return (int)len;
+}
+
+int syn_port_serial_read(uint8_t *buf, size_t max_len)
+{
+    size_t count = 0;
+    while (count < max_len && mock_serial_rx_pos < mock_serial_rx_len) {
+        buf[count++] = mock_serial_rx_buf[mock_serial_rx_pos++];
+    }
+    return (int)count;
+}
+
 /* ── Assert handler ─────────────────────────────────────────────────────── */
 
 void syn_assert_failed(const char *file, int line)
@@ -690,6 +726,13 @@ void mock_port_reset(void)
     memset(mock_uart_tx_buf, 0, sizeof(mock_uart_tx_buf));
     mock_uart_tx_len = 0;
     mock_uart_init_fail = false;
+
+    /* Console serial mock */
+    memset(mock_serial_tx_buf, 0, sizeof(mock_serial_tx_buf));
+    mock_serial_tx_len = 0;
+    memset(mock_serial_rx_buf, 0, sizeof(mock_serial_rx_buf));
+    mock_serial_rx_len = 0;
+    mock_serial_rx_pos = 0;
 
 #if defined(SYN_USE_DMA) && SYN_USE_DMA
     memset(mock_dma, 0, sizeof(mock_dma));
